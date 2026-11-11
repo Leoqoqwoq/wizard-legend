@@ -48,7 +48,6 @@ export class GameScene extends Phaser.Scene {
   private attackTimer = 0;
   private invuln = 0;
   private cleared = false;
-  private floorText!: Phaser.GameObjects.Text;
   private coinText!: Phaser.GameObjects.Text;
   private hpContainer!: Phaser.GameObjects.Container;
   private hintText!: Phaser.GameObjects.Text;
@@ -491,7 +490,7 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(100);
 
-    this.floorText = this.add
+    this.add
       .text(width / 2, 28, `FLOOR ${runState.floor}`, {
         fontFamily: "Arial Black, Arial",
         fontSize: "16px",

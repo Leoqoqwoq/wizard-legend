@@ -10,7 +10,10 @@ export class Joystick {
   private readonly radius = 70;
   private active = false;
 
-  constructor(private scene: Phaser.Scene) {
+  private scene: Phaser.Scene;
+
+  constructor(scene: Phaser.Scene) {
+    this.scene = scene;
     const { width, height } = scene.scale;
     this.base = scene.add
       .circle(width / 2, height - 110, this.radius, 0xffffff, 0.12)

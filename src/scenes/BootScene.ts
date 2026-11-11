@@ -22,6 +22,27 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
+    // Evita loader travado (comum se resize/HMR interrompe o Boot)
+    this.load.on("loaderror", (file: Phaser.Loader.File) => {
+      console.warn("[Boot] falha ao carregar", file.key, file.url);
+    });
+    const kick = window.setInterval(() => {
+      if (!this.sys.isActive()) {
+        window.clearInterval(kick);
+        return;
+      }
+      const loader = this.load;
+      if (!loader.isLoading()) {
+        window.clearInterval(kick);
+        return;
+      }
+      // Lista pendente sem nada em voo = loader morto → reinicia
+      if (loader.list.size > 0 && loader.inflight.size === 0) {
+        console.warn("[Boot] loader parado — reiniciando fila", loader.list.size);
+        loader.start();
+      }
+    }, 400);
+
     this.load.spritesheet("wizard", asset("assets/wizard_sheet.png"), {
       frameWidth: 48,
       frameHeight: 48
@@ -208,6 +229,8 @@ export class BootScene extends Phaser.Scene {
     if (floorMatch) {
       runState.floor = Math.max(1, Number(floorMatch[1]) || 1);
     }
+    this.game.events.emit("wl-boot-ready");
+
     if (/[?&]skills=1/.test(q)) this.scene.start("SkillSelect");
     else if (/[?&]book=1/.test(q)) {
       uiSel.tab = "book";

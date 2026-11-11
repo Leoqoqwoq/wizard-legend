@@ -288,7 +288,9 @@ export class LobbyScene extends Phaser.Scene {
     this.player.setRotation(0);
     this.player.setSize(14, 18).setOffset(17, 22);
     (this.player.body as Phaser.Physics.Arcade.Body).moves = true;
-    this.player.play(playerAnimKey("idle", this.facing));
+    const idleKey = playerAnimKey("idle", this.facing);
+    if (this.anims.exists(idleKey)) this.player.play(idleKey);
+    else this.player.setFrame(0);
 
     const cape = CAPES[metaState.equippedCape];
     if (cape.tint !== 0xffffff) this.player.setTint(cape.tint);

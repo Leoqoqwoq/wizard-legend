@@ -25,6 +25,8 @@ export function updatePlayerMotion(opts: {
   const moving = velocity.lengthSq() > 0.012;
   const body = sprite.body as Phaser.Physics.Arcade.Body;
 
+  if (!body.moves) body.moves = true;
+
   if (moving) {
     body.setVelocity(velocity.x * speed, velocity.y * speed);
     facing = facingFromVector(velocity.x, velocity.y, facing);
@@ -33,13 +35,21 @@ export function updatePlayerMotion(opts: {
     const strong = velocity.length() > 0.78;
     const state = strong ? "run" : "walk";
     const key = playerAnimKey(state, facing);
-    if (!lockAnim && sprite.anims.currentAnim?.key !== key) {
+    if (
+      !lockAnim &&
+      sprite.anims.currentAnim?.key !== key &&
+      sprite.scene.anims.exists(key)
+    ) {
       sprite.play(key);
     }
   } else {
     body.setVelocity(0, 0);
     const key = playerAnimKey("idle", facing);
-    if (!lockAnim && sprite.anims.currentAnim?.key !== key) {
+    if (
+      !lockAnim &&
+      sprite.anims.currentAnim?.key !== key &&
+      sprite.scene.anims.exists(key)
+    ) {
       sprite.play(key);
     }
   }

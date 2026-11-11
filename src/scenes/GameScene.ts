@@ -371,7 +371,9 @@ export class GameScene extends Phaser.Scene {
     pBody.moves = true;
     pBody.setMaxSpeed(this.playerSpeed);
     if (this.physics.world.isPaused) this.physics.resume();
-    this.player.play(playerAnimKey("idle", this.facing));
+    const idleKey = playerAnimKey("idle", this.facing);
+    if (this.anims.exists(idleKey)) this.player.play(idleKey);
+    else this.player.setFrame(0);
     this.player.setData("attacking", false);
 
     // Preset de capa do lobby
@@ -951,7 +953,8 @@ export class GameScene extends Phaser.Scene {
     this.enemies.getChildren().forEach((obj) => {
       const e = obj as Phaser.Physics.Arcade.Sprite;
       if (!e.active) return;
-      const data = e.getData("data") as EnemyData;
+      const data = e.getData("data") as EnemyData | undefined;
+      if (!data) return;
       if (data.frozen > 0) {
         data.frozen -= dt;
         e.setTint(0x74b9ff);
@@ -1207,8 +1210,8 @@ export class GameScene extends Phaser.Scene {
 
     // Freeze chance
     if ((runState.skills.freeze ?? 0) > 0 && Math.random() < 0.2) {
-      const data = enemy.getData("data") as EnemyData;
-      data.frozen = 1.2;
+      const data = enemy.getData("data") as EnemyData | undefined;
+      if (data) data.frozen = 1.2;
     }
 
     const body = bullet.body as Phaser.Physics.Arcade.Body | null;
@@ -1238,7 +1241,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private damageEnemy(enemy: Phaser.Physics.Arcade.Sprite, dmg: number) {
-    const data = enemy.getData("data") as EnemyData;
+    const data = enemy.getData("data") as EnemyData | undefined;
+    if (!data) return;
     data.hp -= dmg;
     this.showDamage(enemy.x, enemy.y - 20, dmg);
 

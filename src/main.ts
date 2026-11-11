@@ -52,8 +52,40 @@ const config: Phaser.Types.Core.GameConfig = {
 
 const game = new Phaser.Game(config);
 
-/** Canvas sempre igual ao quadro do navegador. */
-window.addEventListener("resize", () => {
-  const { width, height } = viewport();
-  game.scale.resize(width, height);
+declare global {
+  interface Window {
+    __WL_GAME__?: Phaser.Game;
+  }
+}
+window.__WL_GAME__ = game;
+
+/**
+ * Resize só depois do Boot terminar.
+ * Redimensionar durante o load trava o loader do Phaser (mago “congelado”).
+ */
+let bootReady = false;
+game.events.once("wl-boot-ready", () => {
+  bootReady = true;
 });
+
+window.addEventListener("resize", () => {
+  if (!bootReady) return;
+  const { width, height } = viewport();
+  if (
+    Math.abs(width - game.scale.width) > 2 ||
+    Math.abs(height - game.scale.height) > 2
+  ) {
+    game.scale.resize(width, height);
+  }
+});
+
+/** Se o Boot ficar preso no load (cena inativa), reinicia. */
+window.setTimeout(() => {
+  if (bootReady) return;
+  const boot = game.scene.getScene("Boot");
+  const loading = boot?.load?.isLoading?.();
+  if (loading || !game.scene.isActive("Lobby")) {
+    console.warn("[WL] Boot preso — reiniciando");
+    game.scene.start("Boot");
+  }
+}, 4000);

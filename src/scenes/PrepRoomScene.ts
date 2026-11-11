@@ -7,6 +7,7 @@ import { runState, isBossFloor } from "../game/RunState";
 import { SKILLS, type SkillId } from "../game/skills";
 import { kingdomForFloor, ULTRA_BOSS } from "../game/kingdoms";
 import { isUltraBossFloor } from "../game/RunState";
+import { followBrowserFrame } from "../game/followBrowser";
 
 /**
  * Sala de preparo antes do boss (estilo lobby):
@@ -44,6 +45,7 @@ export class PrepRoomScene extends Phaser.Scene {
     this.buildHud();
 
     this.joystick = new Joystick(this);
+    followBrowserFrame(this, () => this.joystick?.destroy());
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
       this.wasd = this.input.keyboard.addKeys("W,A,S,D") as Record<
@@ -247,8 +249,11 @@ export class PrepRoomScene extends Phaser.Scene {
       .setDepth(100);
 
     for (let i = 0; i < runState.maxHp; i++) {
-      const pip = this.add.image(18 + i * 16, 28, "hp_pip").setDepth(100);
-      if (i >= runState.hp) pip.setTint(0x444444);
+      const pip = this.add
+        .image(18 + i * 22, 28, "hp_pip")
+        .setDisplaySize(20, 18)
+        .setDepth(100);
+      if (i >= runState.hp) pip.setTint(0x555555).setAlpha(0.55);
     }
   }
 
@@ -409,6 +414,9 @@ export class PrepRoomScene extends Phaser.Scene {
       body.setVelocity(0, 0);
       return;
     }
+    if (!this.joystick) return;
+    const moveBody = this.player.body as Phaser.Physics.Arcade.Body;
+    if (!moveBody.moves) moveBody.moves = true;
     const dt = dtMs / 1000;
 
     const v = this.joystick.getVector().clone();

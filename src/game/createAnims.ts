@@ -262,24 +262,35 @@ function generateStatic(scene: Phaser.Scene) {
     ["bullet_thunder", "#f1c40f", "#fcf3cf"]
   ];
   bullets.forEach(([key, c1, c2]) => {
-    addFrame(scene, key, 16, 16, (ctx) => {
-      const g = ctx.createRadialGradient(6, 6, 1, 8, 8, 7);
-      g.addColorStop(0, c2);
-      g.addColorStop(1, c1);
+    // 48px + glow: projétil mais redondo/suave no upscale
+    addFrame(scene, key, 48, 48, (ctx) => {
+      ctx.shadowColor = c1;
+      ctx.shadowBlur = 10;
+      const g = ctx.createRadialGradient(24, 24, 2, 24, 24, 16);
+      g.addColorStop(0, "#ffffff");
+      g.addColorStop(0.35, c2);
+      g.addColorStop(0.75, c1);
+      g.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(8, 8, 6, 0, Math.PI * 2);
+      ctx.arc(24, 24, 16, 0, Math.PI * 2);
       ctx.fill();
     });
   });
 
-  addFrame(scene, "bullet_ring", 18, 18, (ctx) => {
+  addFrame(scene, "bullet_ring", 48, 48, (ctx) => {
     ctx.strokeStyle = "#ff3b3b";
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.shadowColor = "#ff0000";
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 12;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.arc(9, 9, 5, 0, Math.PI * 2);
+    ctx.arc(24, 24, 12, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,180,180,0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(24, 24, 8, 0, Math.PI * 2);
     ctx.stroke();
   });
 
@@ -329,12 +340,147 @@ function generateStatic(scene: Phaser.Scene) {
     ctx.fill();
   });
 
-  addFrame(scene, "hp_pip", 16, 12, (ctx) => {
-    const g = ctx.createLinearGradient(0, 0, 0, 12);
-    g.addColorStop(0, "#58d68d");
-    g.addColorStop(1, "#1e8449");
+  // hp_pip definitivo em ensureHpHeart (coração)
+  generateSoftUi(scene);
+}
+
+/** UI suave/arredondada (cartas, livro, botões). */
+function generateSoftUi(scene: Phaser.Scene) {
+  // Carta de skill — pergaminho arredondado
+  const makeCard = (key: string, c0: string, c1: string, edge: string) => {
+    addFrame(scene, key, 160, 240, (ctx) => {
+      ctx.shadowColor = "rgba(0,0,0,0.35)";
+      ctx.shadowBlur = 18;
+      ctx.shadowOffsetY = 8;
+      const g = ctx.createLinearGradient(0, 0, 0, 240);
+      g.addColorStop(0, c0);
+      g.addColorStop(1, c1);
+      ctx.fillStyle = g;
+      roundRect(ctx, 12, 10, 136, 212, 28);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 4;
+      roundRect(ctx, 12, 10, 136, 212, 28);
+      ctx.stroke();
+      // brilho superior
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      roundRect(ctx, 22, 18, 116, 36, 16);
+      ctx.fill();
+      // medalhão do ícone
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.beginPath();
+      ctx.arc(80, 88, 34, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(80,40,20,0.25)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(80, 88, 34, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+  };
+  makeCard("ui_soft_card", "#fff3d6", "#e8c48a", "#c48a4a");
+  makeCard("ui_soft_card_alt", "#f3e7ff", "#c9a6e8", "#8e5bb8");
+  makeCard("ui_soft_card_warm", "#ffe8d6", "#f0a878", "#d4783a");
+
+  // Livro aberto suave (substitui o print estranho)
+  addFrame(scene, "ui_soft_book", 420, 260, (ctx, w, h) => {
+    ctx.shadowColor = "rgba(0,0,0,0.4)";
+    ctx.shadowBlur = 22;
+    ctx.shadowOffsetY = 10;
+    // capa
+    ctx.fillStyle = "#6b3a22";
+    roundRect(ctx, 18, 22, w - 36, h - 44, 26);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // páginas
+    const pageG = ctx.createLinearGradient(40, 40, 40, h - 40);
+    pageG.addColorStop(0, "#fffaf0");
+    pageG.addColorStop(1, "#f0e0c8");
+    ctx.fillStyle = pageG;
+    roundRect(ctx, 36, 36, w - 72, h - 72, 18);
+    ctx.fill();
+    // lombada / sombra central
+    const spine = ctx.createLinearGradient(w / 2 - 18, 0, w / 2 + 18, 0);
+    spine.addColorStop(0, "rgba(90,50,30,0.08)");
+    spine.addColorStop(0.5, "rgba(60,30,15,0.28)");
+    spine.addColorStop(1, "rgba(90,50,30,0.08)");
+    ctx.fillStyle = spine;
+    ctx.fillRect(w / 2 - 16, 40, 32, h - 80);
+    // linhas decorativas nas páginas
+    ctx.strokeStyle = "rgba(140,100,60,0.18)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      const y = 70 + i * 28;
+      ctx.beginPath();
+      ctx.moveTo(56, y);
+      ctx.lineTo(w / 2 - 28, y);
+      ctx.moveTo(w / 2 + 28, y);
+      ctx.lineTo(w - 56, y);
+      ctx.stroke();
+    }
+    // anéis da lombada
+    for (let i = 0; i < 4; i++) {
+      const y = 70 + i * 42;
+      ctx.fillStyle = "#d4a017";
+      ctx.beginPath();
+      ctx.ellipse(w / 2, y, 10, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#8a5a10";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  });
+
+  // Slot redondo
+  addFrame(scene, "ui_soft_slot", 64, 64, (ctx) => {
+    ctx.shadowColor = "rgba(0,0,0,0.25)";
+    ctx.shadowBlur = 8;
+    const g = ctx.createRadialGradient(32, 28, 6, 32, 32, 26);
+    g.addColorStop(0, "#fff8e8");
+    g.addColorStop(1, "#d7b48a");
     ctx.fillStyle = g;
-    roundRect(ctx, 1, 1, 14, 10, 2);
+    ctx.beginPath();
+    ctx.arc(32, 32, 26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "#a67c52";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(32, 32, 26, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  // Botão pílula
+  addFrame(scene, "ui_soft_btn", 220, 64, (ctx) => {
+    ctx.shadowColor = "rgba(0,0,0,0.3)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+    const g = ctx.createLinearGradient(0, 0, 0, 64);
+    g.addColorStop(0, "#b57bde");
+    g.addColorStop(1, "#7b3fa8");
+    ctx.fillStyle = g;
+    roundRect(ctx, 8, 8, 204, 48, 24);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    roundRect(ctx, 16, 12, 188, 16, 10);
+    ctx.fill();
+  });
+
+  addFrame(scene, "ui_soft_btn_brown", 220, 64, (ctx) => {
+    ctx.shadowColor = "rgba(0,0,0,0.3)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+    const g = ctx.createLinearGradient(0, 0, 0, 64);
+    g.addColorStop(0, "#e0b07a");
+    g.addColorStop(1, "#a86b35");
+    ctx.fillStyle = g;
+    roundRect(ctx, 8, 8, 204, 48, 24);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    roundRect(ctx, 16, 12, 188, 16, 10);
     ctx.fill();
   });
 }

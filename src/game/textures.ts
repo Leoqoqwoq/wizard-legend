@@ -500,29 +500,34 @@ function makeBullets(scene: Phaser.Scene) {
     ["bullet_thunder", "#f1c40f", "#fcf3cf"]
   ];
   bullets.forEach(([key, c1, c2]) => {
-    canvasTex(scene, key, 16, 16, (ctx) => {
-      const g = ctx.createRadialGradient(6, 6, 1, 8, 8, 7);
-      g.addColorStop(0, c2);
-      g.addColorStop(1, c1);
+    canvasTex(scene, key, 48, 48, (ctx) => {
+      ctx.shadowColor = c1;
+      ctx.shadowBlur = 10;
+      const g = ctx.createRadialGradient(24, 24, 2, 24, 24, 16);
+      g.addColorStop(0, "#ffffff");
+      g.addColorStop(0.35, c2);
+      g.addColorStop(0.75, c1);
+      g.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(8, 8, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.8)";
-      ctx.beginPath();
-      ctx.arc(6, 6, 2, 0, Math.PI * 2);
+      ctx.arc(24, 24, 16, 0, Math.PI * 2);
       ctx.fill();
     });
   });
 
-  // anel vermelho inimigo (projétil estilo vídeo)
-  canvasTex(scene, "bullet_ring", 18, 18, (ctx) => {
+  canvasTex(scene, "bullet_ring", 48, 48, (ctx) => {
     ctx.strokeStyle = "#ff3b3b";
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.shadowColor = "#ff0000";
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 12;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.arc(9, 9, 5, 0, Math.PI * 2);
+    ctx.arc(24, 24, 12, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,180,180,0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(24, 24, 8, 0, Math.PI * 2);
     ctx.stroke();
   });
 }
@@ -592,16 +597,6 @@ function makeCoin(scene: Phaser.Scene) {
   });
 }
 
-function makeHpPip(scene: Phaser.Scene) {
-  canvasTex(scene, "hp_pip", 16, 12, (ctx) => {
-    const g = ctx.createLinearGradient(0, 0, 0, 12);
-    g.addColorStop(0, "#58d68d");
-    g.addColorStop(1, "#1e8449");
-    ctx.fillStyle = g;
-    ctx.strokeStyle = "#145a32";
-    ctx.lineWidth = 1;
-    roundRect(ctx, 1, 1, 14, 10, 2);
-    ctx.fill();
-    ctx.stroke();
-  });
+function makeHpPip(_scene: Phaser.Scene) {
+  // Coração gerado em skillIcons.ensureHpHeart
 }

@@ -8,6 +8,7 @@ import {
 import { uiSel } from "../game/equipUi";
 import { tuneWizardAnimRates } from "../game/playerMotion";
 import { runState } from "../game/RunState";
+import { ensureHpHeart, ensureSkillIcons } from "../game/skillIcons";
 
 /** Respeita base do Vite (ex.: /wizard-legend/ no GitHub Pages). */
 function asset(path: string) {
@@ -82,6 +83,24 @@ export class BootScene extends Phaser.Scene {
     for (let i = 0; i <= 11; i++) {
       this.load.image(`ui_skill_${i}`, asset(`assets/ui/skills/skill_${i}.png`));
     }
+    // Ícones estilo Wizard Legend (CC0, frame circular)
+    const skillIds = [
+      "front_arrow",
+      "dark_missile",
+      "thorns",
+      "fury_of_thor",
+      "flame_elf",
+      "ricochet",
+      "multishot",
+      "diagonal",
+      "attack_speed",
+      "hp_boost",
+      "wall_bounce",
+      "freeze"
+    ];
+    for (const id of skillIds) {
+      this.load.image(`skill_wl_${id}`, asset(`assets/ui/skills_wl/${id}.png`));
+    }
 
     // Lobby / merchant
     this.load.spritesheet("lobby_shopkeeper", asset("assets/lobby/shopkeeper.png"), {
@@ -135,9 +154,12 @@ export class BootScene extends Phaser.Scene {
 
   create() {
     generateTexturesAndAnims(this);
+    ensureHpHeart(this);
+    ensureSkillIcons(this);
     registerWizardPackAnims(this);
     tuneWizardAnimRates(this);
     registerEnemyPackAnims(this);
+    this.softenTextures();
 
     if (!this.anims.exists("gem-spin")) {
       this.anims.create({
@@ -193,5 +215,15 @@ export class BootScene extends Phaser.Scene {
     } else if (/[?&]equip=1/.test(q)) this.scene.start("Equip");
     else if (/[?&]game=1/.test(q) || floorMatch) this.scene.start("Game");
     else this.scene.start("Lobby");
+  }
+
+  /** Suaviza sprites (menos “pixel duro”, bordas mais redondas). */
+  private softenTextures() {
+    for (const key of this.textures.getTextureKeys()) {
+      if (key === "__DEFAULT" || key === "__MISSING") continue;
+      this.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
+    }
+    const canvas = this.game.canvas;
+    if (canvas) canvas.style.imageRendering = "auto";
   }
 }

@@ -7,7 +7,9 @@ export class Joystick {
   private pointerId: number | null = null;
   private origin = new Phaser.Math.Vector2();
   private value = new Phaser.Math.Vector2();
-  private readonly radius = 70;
+  private readonly radius = 48;
+  private readonly thumbR = 18;
+  private readonly restY = 88;
   private active = false;
 
   private scene: Phaser.Scene;
@@ -16,12 +18,12 @@ export class Joystick {
     this.scene = scene;
     const { width, height } = scene.scale;
     this.base = scene.add
-      .circle(width / 2, height - 110, this.radius, 0xffffff, 0.12)
+      .circle(width / 2, height - this.restY, this.radius, 0xffffff, 0.12)
       .setScrollFactor(0)
       .setDepth(1000)
       .setStrokeStyle(2, 0xffffff, 0.25);
     this.thumb = scene.add
-      .circle(width / 2, height - 110, 28, 0xffffff, 0.28)
+      .circle(width / 2, height - this.restY, this.thumbR, 0xffffff, 0.28)
       .setScrollFactor(0)
       .setDepth(1001);
 
@@ -60,8 +62,8 @@ export class Joystick {
     this.active = false;
     this.value.set(0, 0);
     const { width, height } = this.scene.scale;
-    this.base.setPosition(width / 2, height - 110).setAlpha(0.12);
-    this.thumb.setPosition(width / 2, height - 110).setAlpha(0.28);
+    this.base.setPosition(width / 2, height - this.restY).setAlpha(0.12);
+    this.thumb.setPosition(width / 2, height - this.restY).setAlpha(0.28);
   }
 
   /** Vetor normalizado -1..1. Magnitude 0 = parado (pode atacar). */

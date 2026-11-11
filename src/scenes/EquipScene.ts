@@ -16,6 +16,7 @@ import {
   type BookId,
   type CapeId
 } from "../game/MetaState";
+import { followBrowserFrame } from "../game/followBrowser";
 
 /** Armário estilo WL: abas Capa / Libro, preview do mago, compra em gemas. */
 export class EquipScene extends Phaser.Scene {
@@ -32,6 +33,7 @@ export class EquipScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
+    followBrowserFrame(this);
     ensureEquipIcons(this);
 
     uiSel.cape = metaState.equippedCape;

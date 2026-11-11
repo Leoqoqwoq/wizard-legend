@@ -17,13 +17,14 @@ export interface SkillDef {
   name: string;
   description: string;
   color: number;
-  /** Índice do ícone Critters (skill_0..11) */
+  /** Índice legado (Critters); ícone real vem de skill_gen_* */
   iconIndex: number;
   maxStacks: number;
 }
 
 export function skillIconKey(def: SkillDef) {
-  return `ui_skill_${def.iconIndex}`;
+  // Prefer ícones baixados estilo WL; fallback procedural
+  return `skill_wl_${def.id}`;
 }
 
 export const SKILLS: Record<SkillId, SkillDef> = {

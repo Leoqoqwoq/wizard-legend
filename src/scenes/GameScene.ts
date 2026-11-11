@@ -22,6 +22,7 @@ import {
   kingdomForFloor,
   type KingdomEnemySlot
 } from "../game/kingdoms";
+import { followBrowserFrame } from "../game/followBrowser";
 
 type EnemyType = EnemyKind;
 
@@ -138,6 +139,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnElevator();
 
     this.joystick = new Joystick(this);
+    followBrowserFrame(this, () => this.joystick?.destroy());
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
       this.wasd = this.input.keyboard.addKeys("W,A,S,D") as Record<
@@ -365,7 +367,10 @@ export class GameScene extends Phaser.Scene {
     this.player.setSize(14, 18).setOffset(17, 22);
     this.player.setScale(2.2);
     this.player.setRotation(0);
-    (this.player.body as Phaser.Physics.Arcade.Body).setMaxSpeed(this.playerSpeed);
+    const pBody = this.player.body as Phaser.Physics.Arcade.Body;
+    pBody.moves = true;
+    pBody.setMaxSpeed(this.playerSpeed);
+    if (this.physics.world.isPaused) this.physics.resume();
     this.player.play(playerAnimKey("idle", this.facing));
     this.player.setData("attacking", false);
 
@@ -483,11 +488,15 @@ export class GameScene extends Phaser.Scene {
 
     const boss = this.createEnemy(kind, r.centerX, r.y + 120, floor, true);
     const data = boss.getData("data") as EnemyData;
-    const tier = ultra ? 12 : Math.max(1, Math.floor(floor / 10));
-    data.hp = data.maxHp = ultra ? 220 : 28 + tier * 22;
-    data.speed = ultra ? 28 : 22 + tier * 2;
+    // Boss: começa mais baixo e escala com o andar (não só a cada 10)
+    data.hp = data.maxHp = ultra
+      ? 140 + Math.floor(floor * 1.5)
+      : 10 + floor * 2 + Math.floor(floor / 10) * 6;
+    data.speed = ultra ? 30 : 24 + Math.floor(floor / 10) * 2;
     data.damage = ultra ? 2 : 1;
-    data.shootCd = ultra ? 0.7 : Math.max(0.85, 1.6 - tier * 0.08);
+    data.shootCd = ultra
+      ? 0.7
+      : Math.max(0.9, 1.55 - Math.floor(floor / 10) * 0.07);
     data.shootTimer = 1.0;
     data.isBoss = true;
     data.isUltra = ultra;
@@ -548,24 +557,22 @@ export class GameScene extends Phaser.Scene {
     const tint = slot?.tint;
     if (tint !== undefined && !isBoss) e.setTint(tint);
 
-    const hp =
-      (kind === "kernel" ? 1 : 2) +
-      Math.floor(floor * 0.8) +
-      (kind === "bot" || kind === "pop" ? 2 : 0);
+    // Andares baixos: bem frágeis. Sobe devagar com o floor.
+    const hp = this.enemyHpForFloor(kind, floor);
 
     const data: EnemyData = {
       hp,
       maxHp: hp,
       speed:
-        30 +
-        floor * 3 +
-        (kind === "eye" || kind === "kernel" ? 22 : 0) +
-        (kind === "bug" ? 10 : 0),
+        34 +
+        Math.floor(floor * 1.6) +
+        (kind === "eye" || kind === "kernel" ? 18 : 0) +
+        (kind === "bug" ? 8 : 0),
       damage: 1,
       shootCd:
         kind === "bug" || kind === "kernel"
           ? 999
-          : 1.55 - Math.min(floor * 0.05, 0.7),
+          : 1.6 - Math.min(floor * 0.035, 0.55),
       shootTimer: Phaser.Math.FloatBetween(0.3, 1.2),
       kind,
       frozen: 0,
@@ -602,17 +609,31 @@ export class GameScene extends Phaser.Scene {
     enemy.setData("hpBar", bar);
   }
 
+  /** HP baixo no começo; sobe conforme o andar. */
+  private enemyHpForFloor(kind: EnemyType, floor: number) {
+    const f = Math.max(1, floor);
+    const base =
+      kind === "kernel" ? 1 : kind === "eye" || kind === "bug" ? 1 : 2;
+    // +1 a cada 4 andares
+    const step = Math.floor((f - 1) / 4);
+    // a partir do 20, acelera um pouco
+    const late = f >= 20 ? Math.floor((f - 19) / 3) : 0;
+    const tanky =
+      kind === "bot" || kind === "pop" ? Math.floor((f - 1) / 12) : 0;
+    return Math.max(1, base + step + late + tanky);
+  }
+
   private createHud() {
     const { width } = this.scale;
 
     const pauseBg = this.add
-      .rectangle(28, 28, 36, 36, 0x566573, 0.85)
+      .circle(30, 30, 20, 0x566573, 0.88)
       .setScrollFactor(0)
       .setDepth(100)
-      .setStrokeStyle(2, 0xffffff, 0.3)
+      .setStrokeStyle(2, 0xffffff, 0.35)
       .setInteractive({ useHandCursor: true });
     this.add
-      .text(28, 28, "❚❚", { fontSize: "14px", color: "#fff" })
+      .text(30, 30, "❚❚", { fontSize: "13px", color: "#fff" })
       .setOrigin(0.5)
       .setDepth(101)
       .setScrollFactor(0);
@@ -656,15 +677,16 @@ export class GameScene extends Phaser.Scene {
       .setDepth(100)
       .setAlpha(0.9);
 
-    this.hpContainer = this.add.container(0, 0).setDepth(100).setScrollFactor(0);
+    // HP fixo no HUD (canto superior esquerdo), não segue o mago
+    this.hpContainer = this.add.container(58, 30).setDepth(100).setScrollFactor(0);
     this.refreshHpHud();
   }
 
   private refreshHpHud() {
     this.hpContainer.removeAll(true);
     for (let i = 0; i < runState.maxHp; i++) {
-      const pip = this.add.image(18 + i * 16, -22, "hp_pip");
-      if (i >= runState.hp) pip.setTint(0x444444);
+      const pip = this.add.image(i * 22, 0, "hp_pip").setDisplaySize(20, 18);
+      if (i >= runState.hp) pip.setTint(0x555555).setAlpha(0.55);
       this.hpContainer.add(pip);
     }
   }
@@ -673,8 +695,14 @@ export class GameScene extends Phaser.Scene {
     if (this.paused) return;
     const dt = dtMs / 1000;
     if (!this.player?.active) return;
+    if (!this.joystick) return;
 
     this.invuln = Math.max(0, this.invuln - dt);
+
+    // Garante que o corpo pode se mover (owl/shop às vezes deixavam moves=false)
+    const pBody = this.player.body as Phaser.Physics.Arcade.Body | null;
+    if (pBody && !pBody.moves) pBody.moves = true;
+    if (this.physics.world.isPaused && !this.runEnded) this.physics.resume();
 
     // Movimento (joystick + WASD/setas no desktop)
     const v = this.joystick.getVector().clone();
@@ -708,8 +736,6 @@ export class GameScene extends Phaser.Scene {
       this.room.y + 20,
       this.room.bottom - 20
     );
-
-    this.hpContainer.setPosition(this.player.x - 28, this.player.y - 22);
 
     // Anel de mira no inimigo mais próximo
     const nearest = this.nearestEnemy();
@@ -823,7 +849,7 @@ export class GameScene extends Phaser.Scene {
     b.setTexture(tex);
     b.setActive(true).setVisible(true).setDepth(16);
     b.clearTint();
-    b.setScale(tex === "bullet_dark" ? 1.15 : 1.05);
+    b.setDisplaySize(tex === "bullet_dark" ? 22 : 18, tex === "bullet_dark" ? 22 : 18);
     b.setRotation(0);
     b.setPosition(x, y);
 
@@ -1077,7 +1103,8 @@ export class GameScene extends Phaser.Scene {
     b.setActive(true).setVisible(true).setDepth(16);
     if (tint !== 0xffffff) b.setTint(tint);
     else b.clearTint();
-    b.setScale(scale);
+    const size = Math.round(20 * scale);
+    b.setDisplaySize(size, size);
     b.setPosition(x, y);
 
     const body = b.body as Phaser.Physics.Arcade.Body | null;
@@ -1096,7 +1123,7 @@ export class GameScene extends Phaser.Scene {
   private killEnemyBullet(b: Phaser.Physics.Arcade.Image) {
     if (!b.active && !(b.body as Phaser.Physics.Arcade.Body | null)?.enable) return;
     b.clearTint();
-    b.setScale(1);
+    b.setDisplaySize(20, 20);
     this.enemyBullets.killAndHide(b);
     const body = b.body as Phaser.Physics.Arcade.Body | null;
     if (body) {

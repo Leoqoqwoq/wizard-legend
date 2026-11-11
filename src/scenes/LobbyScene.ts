@@ -9,6 +9,7 @@ import {
   owlAdReady
 } from "../game/MetaState";
 import { saveLobbyReturn, takeLobbyReturn } from "../game/equipUi";
+import { followBrowserFrame } from "../game/followBrowser";
 import { updatePlayerMotion } from "../game/playerMotion";
 import { resetRun, type RunMode } from "../game/RunState";
 
@@ -51,6 +52,7 @@ export class LobbyScene extends Phaser.Scene {
     this.buildBottomNav();
 
     this.joystick = new Joystick(this);
+    followBrowserFrame(this, () => this.joystick?.destroy());
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
       this.wasd = this.input.keyboard.addKeys("W,A,S,D") as Record<
@@ -285,6 +287,7 @@ export class LobbyScene extends Phaser.Scene {
     this.player.setScale(2.2);
     this.player.setRotation(0);
     this.player.setSize(14, 18).setOffset(17, 22);
+    (this.player.body as Phaser.Physics.Arcade.Body).moves = true;
     this.player.play(playerAnimKey("idle", this.facing));
 
     const cape = CAPES[metaState.equippedCape];
@@ -305,12 +308,12 @@ export class LobbyScene extends Phaser.Scene {
   private buildHud() {
     const { width } = this.scale;
     const pauseBg = this.add
-      .rectangle(28, 28, 36, 36, 0x566573, 0.85)
+      .circle(30, 30, 20, 0x566573, 0.88)
       .setDepth(100)
-      .setStrokeStyle(2, 0xffffff, 0.3)
+      .setStrokeStyle(2, 0xffffff, 0.35)
       .setInteractive({ useHandCursor: true });
     this.add
-      .image(28, 28, "icon_pause")
+      .image(30, 30, "icon_pause")
       .setDisplaySize(18, 18)
       .setDepth(101);
     pauseBg.on("pointerdown", () => this.flashPrompt("Pause"));
@@ -602,6 +605,10 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     const dt = dtMs / 1000;
+
+    if (!this.joystick) return;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    if (!body.moves) body.moves = true;
 
     const v = this.joystick.getVector().clone();
     if (this.cursors?.left.isDown || this.wasd?.A?.isDown) v.x = -1;

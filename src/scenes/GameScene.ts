@@ -1,7 +1,13 @@
 import Phaser from "phaser";
 import { Joystick } from "../game/Joystick";
 import { CAPES, metaState } from "../game/MetaState";
-import { runState, resetRun } from "../game/RunState";
+import {
+  runState,
+  resetRun,
+  isBossFloor,
+  isFinalCampaignFloor,
+  isUltraBossFloor
+} from "../game/RunState";
 import {
   enemyAnimKey,
   facingFromVector,
@@ -10,6 +16,12 @@ import {
   type Facing
 } from "../game/createAnims";
 import { updatePlayerMotion } from "../game/playerMotion";
+import {
+  ULTRA_BOSS,
+  enemiesForFloor,
+  kingdomForFloor,
+  type KingdomEnemySlot
+} from "../game/kingdoms";
 
 type EnemyType = EnemyKind;
 
@@ -26,14 +38,12 @@ interface EnemyData {
   /** Tocando attack/hurt — não sobrescrever com idle/move */
   busy: boolean;
   isBoss?: boolean;
+  isUltra?: boolean;
   /** Alterna ring / laser no boss */
   bossPhase?: number;
+  displayTint?: number;
 }
 
-/** No WL original: boss a cada 10 andares (10, 20, 30…). */
-export function isBossFloor(floor: number) {
-  return floor > 0 && floor % 10 === 0;
-}
 
 const ENEMY_TEX: Record<EnemyType, string> = {
   eye: "enemy_eye",
@@ -274,9 +284,14 @@ export class GameScene extends Phaser.Scene {
       .setDisplaySize(TS, TS)
       .setDepth(3);
 
-    // Texto do floor no chão
+    // Texto do floor / reino no chão
+    const endless = runState.mode === "endless";
+    const kingdom = kingdomForFloor(runState.floor, endless);
+    const floorLabel = isUltraBossFloor(runState.floor)
+      ? "ULTRA"
+      : `${runState.floor}`;
     this.add
-      .text(r.centerX, r.centerY + 40, `${runState.floor} FLOOR`, {
+      .text(r.centerX, r.centerY + 24, floorLabel, {
         fontFamily: "Arial Black, Arial",
         fontSize: "42px",
         color: "#ffffff",
@@ -286,6 +301,25 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAlpha(0.18)
       .setDepth(1);
+    this.add
+      .text(
+        r.centerX,
+        r.centerY + 58,
+        isUltraBossFloor(runState.floor)
+          ? ULTRA_BOSS.kingdomName
+          : endless
+            ? `${kingdom.name} · ∞`
+            : kingdom.name,
+        {
+          fontFamily: "Arial Black, Arial",
+          fontSize: "16px",
+          color: "#ffffff"
+        }
+      )
+      .setOrigin(0.5)
+      .setAlpha(0.22)
+      .setDepth(1)
+      .setTint(isUltraBossFloor(runState.floor) ? ULTRA_BOSS.accent : kingdom.accent);
   }
 
   private spawnBlocks() {
@@ -379,6 +413,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private enterElevator() {
+    // Após Ultra Boss: vitória da campanha
+    if (isFinalCampaignFloor(runState.floor)) {
+      this.joystick.destroy();
+      this.showCampaignVictory();
+      return;
+    }
     runState.pendingSkillPick = true;
     runState.clearedFloor = true;
     this.joystick.destroy();
@@ -394,23 +434,29 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const count = Math.min(2 + Math.floor(floor / 2), 7);
-    // Ordem parecida com o vídeo: olho amarelo → slime verde → relógio → pipoca
-    const kinds: EnemyType[] = ["eye", "bug", "bot", "pop"];
+    const pool = enemiesForFloor(floor, runState.mode === "endless");
+    if (pool.length === 0) return;
+
+    // Quantidade sobe no capítulo e no progresso geral
+    const local = ((floor - 1) % 10) + 1;
+    const count = Math.min(2 + Math.floor(local / 2) + Math.floor((floor - 1) / 20), 8);
 
     for (let i = 0; i < count; i++) {
-      const kind = kinds[i % kinds.length];
+      const slot = pool[i % pool.length];
       const x = Phaser.Math.Between(r.x + 50, r.right - 50);
       const y = Phaser.Math.Between(r.y + 80, r.centerY);
-      this.createEnemy(kind, x, y, floor);
+      this.createEnemy(slot.kind, x, y, floor, false, slot);
 
-      // Pipoca vem com grãozinho (como no vídeo)
-      if (kind === "pop") {
+      // Pudim/pop pode trazer pirulito/kernel se já estiver liberado
+      if (slot.kind === "pop" && pool.some((p) => p.kind === "kernel")) {
+        const ker = pool.find((p) => p.kind === "kernel")!;
         this.createEnemy(
           "kernel",
           x + Phaser.Math.Between(-40, 40),
           y + Phaser.Math.Between(30, 60),
-          floor
+          floor,
+          false,
+          ker
         );
       }
     }
@@ -418,34 +464,50 @@ export class GameScene extends Phaser.Scene {
 
   private spawnBoss(floor: number) {
     const r = this.room;
-    // Cicla visual entre bot/pop conforme o “capítulo” (10→bot, 20→pop, …)
-    const chapter = floor / 10;
-    const kind: EnemyType = chapter % 2 === 0 ? "pop" : "bot";
+    const endless = runState.mode === "endless";
+    const ultra = isUltraBossFloor(floor);
+    const kingdom = kingdomForFloor(endless ? floor : Math.min(floor, 60), endless);
+
+    const kind: EnemyType = ultra ? ULTRA_BOSS.kind : kingdom.boss.kind;
+    const tint = ultra ? ULTRA_BOSS.tint : kingdom.boss.tint;
+    const scale = ultra ? ULTRA_BOSS.scale : kingdom.boss.scale;
+    const bossName = ultra ? ULTRA_BOSS.name : kingdom.boss.name;
+
     const boss = this.createEnemy(kind, r.centerX, r.y + 120, floor, true);
     const data = boss.getData("data") as EnemyData;
-    const tier = chapter;
-    data.hp = data.maxHp = 28 + tier * 18;
-    data.speed = 22 + tier * 2;
-    data.damage = 1;
-    data.shootCd = Math.max(0.85, 1.6 - tier * 0.08);
-    data.shootTimer = 1.2;
+    const tier = ultra ? 12 : Math.max(1, Math.floor(floor / 10));
+    data.hp = data.maxHp = ultra ? 220 : 28 + tier * 22;
+    data.speed = ultra ? 28 : 22 + tier * 2;
+    data.damage = ultra ? 2 : 1;
+    data.shootCd = ultra ? 0.7 : Math.max(0.85, 1.6 - tier * 0.08);
+    data.shootTimer = 1.0;
     data.isBoss = true;
+    data.isUltra = ultra;
     data.bossPhase = 0;
-    boss.setScale(kind === "pop" ? 3.1 : 3.2);
-    boss.setTint(0xff9ff3);
+    data.displayTint = tint;
+    boss.setScale(scale);
+    boss.setTint(tint);
     boss.setDepth(12);
     const shadow = boss.getData("shadow") as Phaser.GameObjects.Image;
-    shadow?.setScale(2.4).setAlpha(0.55);
+    shadow?.setScale(ultra ? 3.2 : 2.4).setAlpha(0.55);
 
     this.bossHpGfx = this.add.graphics().setDepth(110).setScrollFactor(0);
+    const labelColor = ultra ? "#ffe566" : "#ffe6f7";
     this.bossHpLabel = this.add
-      .text(this.scale.width / 2, 52, `BOSS · FLOOR ${floor}`, {
-        fontFamily: "Arial Black, Arial",
-        fontSize: "13px",
-        color: "#ffe6f7",
-        stroke: "#4a1040",
-        strokeThickness: 3
-      })
+      .text(
+        this.scale.width / 2,
+        52,
+        ultra
+          ? `ULTRA BOSS · ${bossName}`
+          : `${bossName} · ${kingdom.name}`,
+        {
+          fontFamily: "Arial Black, Arial",
+          fontSize: ultra ? "14px" : "12px",
+          color: labelColor,
+          stroke: "#4a1040",
+          strokeThickness: 3
+        }
+      )
       .setOrigin(0.5)
       .setDepth(111)
       .setScrollFactor(0);
@@ -457,7 +519,8 @@ export class GameScene extends Phaser.Scene {
     x: number,
     y: number,
     floor: number,
-    isBoss = false
+    isBoss = false,
+    slot?: KingdomEnemySlot
   ) {
     const e = this.enemies.create(x, y, ENEMY_TEX[kind], 64) as Phaser.Physics.Arcade.Sprite;
     e.setDepth(8);
@@ -473,6 +536,9 @@ export class GameScene extends Phaser.Scene {
     if (isBoss) {
       e.setSize(28, 30).setOffset(10, 12);
     }
+
+    const tint = slot?.tint;
+    if (tint !== undefined && !isBoss) e.setTint(tint);
 
     const hp =
       (kind === "kernel" ? 1 : 2) +
@@ -497,7 +563,8 @@ export class GameScene extends Phaser.Scene {
       frozen: 0,
       facing: "down",
       busy: false,
-      isBoss
+      isBoss,
+      displayTint: tint
     };
     e.setData("data", data);
 
@@ -560,19 +627,26 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(100);
 
-    const floorLabel = isBossFloor(runState.floor)
-      ? `BOSS ${runState.floor}`
-      : `FLOOR ${runState.floor}`;
+    const endless = runState.mode === "endless";
+    const kingdom = kingdomForFloor(runState.floor, endless);
+    const ultra = isUltraBossFloor(runState.floor);
+    const floorLabel = ultra
+      ? "ULTRA BOSS"
+      : isBossFloor(runState.floor)
+        ? `BOSS ${runState.floor}`
+        : endless
+          ? `∞ F${runState.floor}`
+          : `F${runState.floor} · ${kingdom.name}`;
     this.add
       .text(width / 2, 28, floorLabel, {
         fontFamily: "Arial Black, Arial",
-        fontSize: "16px",
-        color: isBossFloor(runState.floor) ? "#ff9ff3" : "#ffffff"
+        fontSize: ultra ? "15px" : "13px",
+        color: ultra ? "#ffd700" : isBossFloor(runState.floor) ? "#ff9ff3" : "#ffffff"
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(100)
-      .setAlpha(0.85);
+      .setAlpha(0.9);
 
     this.hpContainer = this.add.container(0, 0).setDepth(100).setScrollFactor(0);
     this.refreshHpHud();
@@ -831,7 +905,7 @@ export class GameScene extends Phaser.Scene {
         e.setVelocity(0, 0);
         return;
       }
-      if (data.isBoss) e.setTint(0xff9ff3);
+      if (data.displayTint !== undefined) e.setTint(data.displayTint);
       else e.clearTint();
 
       // Perseguir / flanquear
@@ -1170,7 +1244,7 @@ export class GameScene extends Phaser.Scene {
       enemy.setTint(0xffaaaa);
       this.time.delayedCall(120, () => {
         if (enemy.active) {
-          if (data.isBoss) enemy.setTint(0xff9ff3);
+          if (data.displayTint !== undefined) enemy.setTint(data.displayTint);
           else enemy.clearTint();
         }
       });
@@ -1244,9 +1318,13 @@ export class GameScene extends Phaser.Scene {
       this.elevator.setScale(1);
       this.elevator.setVisible(true);
       this.elevator.body.enable = true;
-      // Porta fica fixa — só o texto indica a saída
+      const exitMsg = isFinalCampaignFloor(runState.floor)
+        ? "↑ Vitória!"
+        : runState.floor === 60
+          ? "↑ Ultra Boss…"
+          : "↑ Próximo andar";
       this.add
-        .text(this.scale.width / 2, this.room.y + 70, "↑ Próximo andar", {
+        .text(this.scale.width / 2, this.room.y + 70, exitMsg, {
           fontFamily: "Arial Black, Arial",
           fontSize: "18px",
           color: "#f1c40f",
@@ -1256,6 +1334,74 @@ export class GameScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(40);
     }
+  }
+
+  private recordProgress() {
+    if (runState.mode === "endless") {
+      if (runState.floor > metaState.bestFloor) metaState.bestFloor = runState.floor;
+    } else if (runState.floor > metaState.bestCampaignFloor) {
+      metaState.bestCampaignFloor = runState.floor;
+    }
+  }
+
+  private showCampaignVictory() {
+    this.physics.pause();
+    runState.campaignWon = true;
+    this.recordProgress();
+    metaState.gems += 80 + Math.floor(runState.coins / 2);
+    metaState.coinsBank += runState.coins;
+
+    const { width, height } = this.scale;
+    this.add.rectangle(width / 2, height / 2, width, height, 0x1a1028, 0.82).setDepth(200);
+    this.add
+      .text(width / 2, height / 2 - 70, "CAMPEÃO!", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "42px",
+        color: "#ffd700",
+        stroke: "#000",
+        strokeThickness: 5
+      })
+      .setOrigin(0.5)
+      .setDepth(201);
+    this.add
+      .text(width / 2, height / 2 - 20, "Você derrotou o Ultra Boss", {
+        fontFamily: "Arial",
+        fontSize: "16px",
+        color: "#ffffff"
+      })
+      .setOrigin(0.5)
+      .setDepth(201);
+    this.add
+      .text(
+        width / 2,
+        height / 2 + 16,
+        `+80 gemas · Floor ${runState.floor} · ${runState.coins} coins`,
+        {
+          fontFamily: "Arial",
+          fontSize: "14px",
+          color: "#82e0aa"
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(201);
+
+    const lobby = this.add
+      .rectangle(width / 2, height / 2 + 70, 200, 48, 0x8e44ad)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(201);
+    this.add
+      .text(width / 2, height / 2 + 70, "Voltar ao Lobby", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "18px",
+        color: "#fff"
+      })
+      .setOrigin(0.5)
+      .setDepth(202);
+    lobby.on("pointerdown", () => {
+      this.joystick?.destroy();
+      resetRun();
+      this.scene.start("Lobby");
+    });
   }
 
   private checkElevator() {
@@ -1292,10 +1438,11 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(201);
 
-    if (runState.floor > metaState.bestFloor) metaState.bestFloor = runState.floor;
+    this.recordProgress();
     metaState.gems += Math.floor(runState.coins / 3);
     metaState.coinsBank += runState.coins;
 
+    const mode = runState.mode;
     const retry = this.add
       .rectangle(width / 2, height / 2 + 55, 180, 44, 0x8e44ad)
       .setInteractive({ useHandCursor: true })
@@ -1310,7 +1457,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(202);
     retry.on("pointerdown", () => {
       this.joystick?.destroy();
-      resetRun();
+      resetRun(mode);
       this.scene.start("Game");
     });
 

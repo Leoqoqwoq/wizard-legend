@@ -1,13 +1,20 @@
 import Phaser from "phaser";
 import { Joystick } from "../game/Joystick";
 import { playerAnimKey, type Facing } from "../game/createAnims";
-import { CAPES, metaState } from "../game/MetaState";
+import {
+  CAPES,
+  OWL_AD_REWARD_GEMS,
+  claimOwlAdReward,
+  metaState,
+  owlAdReady
+} from "../game/MetaState";
+import { saveLobbyReturn, takeLobbyReturn } from "../game/equipUi";
 import { updatePlayerMotion } from "../game/playerMotion";
-import { resetRun } from "../game/RunState";
+import { resetRun, type RunMode } from "../game/RunState";
 
 /**
  * Hub estilo Wizard Legend: sala com mago andável,
- * lojista, coruja, saída pra batalha e barra inferior.
+ * lojista, coruja (anúncio), saída pra batalha e barra inferior.
  */
 export class LobbyScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
@@ -16,10 +23,15 @@ export class LobbyScene extends Phaser.Scene {
   private room!: Phaser.Geom.Rectangle;
   private shopZone!: Phaser.Geom.Rectangle;
   private battleZone!: Phaser.Geom.Rectangle;
+  private owlZone!: Phaser.Geom.Rectangle;
   private prompt!: Phaser.GameObjects.Text;
+  private gemHud!: Phaser.GameObjects.Text;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private battleHold = 0;
+  private adWatching = false;
+  private savedPlayerX = 0;
+  private savedPlayerY = 0;
   private readonly speed = 160;
 
   constructor() {
@@ -58,6 +70,12 @@ export class LobbyScene extends Phaser.Scene {
       this.room.y + 8,
       80,
       50
+    );
+    this.owlZone = new Phaser.Geom.Rectangle(
+      this.room.right - 88,
+      this.room.y + 100,
+      80,
+      70
     );
 
     this.prompt = this.add
@@ -209,54 +227,45 @@ export class LobbyScene extends Phaser.Scene {
       duration: 500
     });
 
-    // Coruja no galho (estilo WL hub)
-    const owlX = r.centerX + 48;
-    const owlY = r.centerY - 8;
+    // Corujinha 16×16 (pixel fofa): anúncio → gemas — canto direito
+    const owlX = r.right - 42;
+    const owlY = r.y + 132;
     const branch = this.add.graphics().setDepth(6);
-    branch.lineStyle(5, 0x6d4c2f, 1);
+    branch.lineStyle(3, 0x6d4c2f, 1);
     branch.beginPath();
-    branch.moveTo(owlX - 36, owlY + 14);
-    branch.lineTo(owlX + 28, owlY + 10);
+    branch.moveTo(owlX - 22, owlY + 10);
+    branch.lineTo(owlX + 18, owlY + 8);
     branch.strokePath();
     branch.fillStyle(0x6d4c2f, 1);
-    branch.fillCircle(owlX - 36, owlY + 14, 4);
+    branch.fillCircle(owlX - 22, owlY + 10, 3);
 
-    const owl = this.add.container(owlX, owlY).setDepth(7);
-    const body = this.add.ellipse(0, 4, 28, 32, 0x6c3483);
-    const belly = this.add.ellipse(0, 8, 16, 18, 0xe8daef);
-    const wingL = this.add.ellipse(-14, 6, 10, 18, 0x5b2c6f);
-    const wingR = this.add.ellipse(14, 6, 10, 18, 0x5b2c6f);
-    const head = this.add.circle(0, -10, 12, 0x7d3c98);
-    const hat = this.add.triangle(0, -26, 0, 0, -11, 12, 11, 12, 0xf8f9f9);
-    const hatBand = this.add.rectangle(0, -20, 18, 3, 0xe74c3c);
-    const earL = this.add.triangle(-10, -18, 0, 0, -6, 10, 4, 8, 0x6c3483);
-    const earR = this.add.triangle(10, -18, 0, 0, -4, 8, 6, 10, 0x6c3483);
-    const eyeL = this.add.circle(-4, -10, 3.5, 0xffffff);
-    const eyeR = this.add.circle(4, -10, 3.5, 0xffffff);
-    const pupilL = this.add.circle(-4, -10, 1.6, 0x111111);
-    const pupilR = this.add.circle(4, -10, 1.6, 0x111111);
-    const beak = this.add.triangle(0, -4, 0, 0, -3, 5, 3, 5, 0xf5b041);
-    const phones = this.add.rectangle(0, -12, 26, 4, 0x2c3e50);
-    owl.add([
-      wingL,
-      wingR,
-      body,
-      belly,
-      earL,
-      earR,
-      head,
-      phones,
-      hat,
-      hatBand,
-      eyeL,
-      eyeR,
-      pupilL,
-      pupilR,
-      beak
-    ]);
+    const owl = this.add
+      .sprite(owlX, owlY, "lobby_owl", 0)
+      .setScale(2.4)
+      .setDepth(8);
+    owl.play("owl-idle");
+
+    const adTag = this.add
+      .text(owlX, owlY - 22, "▶ AD", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "10px",
+        color: "#1a1028",
+        backgroundColor: "#82e0aa",
+        padding: { x: 4, y: 1 }
+      })
+      .setOrigin(0.5)
+      .setDepth(20);
     this.tweens.add({
       targets: owl,
-      y: owlY - 5,
+      y: owlY - 3,
+      yoyo: true,
+      repeat: -1,
+      duration: 900,
+      ease: "Sine.easeInOut"
+    });
+    this.tweens.add({
+      targets: adTag,
+      y: owlY - 25,
       yoyo: true,
       repeat: -1,
       duration: 900,
@@ -266,8 +275,12 @@ export class LobbyScene extends Phaser.Scene {
 
   private spawnPlayer() {
     const r = this.room;
-    this.facing = "up";
-    this.player = this.physics.add.sprite(r.centerX, r.bottom - 70, "wizard", 0);
+    const ret = takeLobbyReturn();
+    const px = ret.x ?? r.centerX;
+    const py = ret.y ?? r.bottom - 70;
+    this.facing = (ret.facing as Facing) || "up";
+
+    this.player = this.physics.add.sprite(px, py, "wizard", 0);
     this.player.setDepth(10);
     this.player.setScale(2.2);
     this.player.setRotation(0);
@@ -279,6 +292,14 @@ export class LobbyScene extends Phaser.Scene {
 
     const shadow = this.add.image(this.player.x, this.player.y + 28, "shadow").setDepth(9);
     this.player.setData("shadow", shadow);
+  }
+
+  private openEquipFromLobby() {
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+    saveLobbyReturn(this.player.x, this.player.y, this.facing);
+    this.joystick.destroy();
+    this.scene.start("Equip");
   }
 
   private buildHud() {
@@ -299,7 +320,7 @@ export class LobbyScene extends Phaser.Scene {
       .image(width - 78, 28, "gem")
       .setDisplaySize(26, 26)
       .setDepth(100);
-    this.add
+    this.gemHud = this.add
       .text(width - 60, 28, String(metaState.gems), {
         fontFamily: "Arial Black, Arial",
         fontSize: "18px",
@@ -327,10 +348,7 @@ export class LobbyScene extends Phaser.Scene {
       .setDepth(150)
       .setStrokeStyle(2, 0x9b7ed9, 0.4);
 
-    const openEquip = () => {
-      this.joystick.destroy();
-      this.scene.start("Equip");
-    };
+    const openEquip = () => this.openEquipFromLobby();
 
     const tabs: {
       icon: string;
@@ -341,12 +359,13 @@ export class LobbyScene extends Phaser.Scene {
       { icon: "icon_wardrobe", action: openEquip, tint: 0xffe0b2 },
       {
         icon: "icon_infinity",
-        action: () => this.flashPrompt("Modo infinito — em breve")
+        action: () => this.startBattle("endless"),
+        tint: 0x7fdbff
       },
-      { icon: "icon_swords", action: () => this.startBattle(), active: true },
+      { icon: "icon_swords", action: () => this.startBattle("campaign"), active: true },
       {
         icon: "icon_trophy",
-        action: () => this.flashPrompt(`Recorde: floor ${metaState.bestFloor}`),
+        action: () => this.showRanking(),
         tint: 0xffd54f
       },
       { icon: "icon_book", action: openEquip, tint: 0xce93d8 }
@@ -380,14 +399,134 @@ export class LobbyScene extends Phaser.Scene {
     });
   }
 
-  private startBattle() {
+  private startBattle(mode: RunMode = "campaign") {
     this.joystick.destroy();
-    resetRun();
+    resetRun(mode);
     this.scene.start("Game");
+  }
+
+  /** Ranking: infinito (recorde principal) + campanha. */
+  private showRanking() {
+    const { width, height } = this.scale;
+    const veil = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x0a0612, 0.75)
+      .setDepth(280)
+      .setInteractive();
+    const panel = this.add
+      .image(width / 2, height / 2, "ui_panel_card")
+      .setDisplaySize(280, 220)
+      .setDepth(281);
+    const title = this.add
+      .text(width / 2, height / 2 - 78, "Ranking", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "20px",
+        color: "#3b2414"
+      })
+      .setOrigin(0.5)
+      .setDepth(282);
+    const body = this.add
+      .text(
+        width / 2,
+        height / 2 - 10,
+        `∞ Infinito\nRecorde: floor ${metaState.bestFloor}\n\n⚔ Campanha\nMelhor: floor ${metaState.bestCampaignFloor}`,
+        {
+          fontFamily: "Arial Black, Arial",
+          fontSize: "15px",
+          color: "#2c1a0a",
+          align: "center"
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(282);
+    const close = this.add
+      .image(width / 2, height / 2 + 78, "ui_btn")
+      .setDisplaySize(120, 36)
+      .setDepth(282)
+      .setInteractive({ useHandCursor: true });
+    const closeTxt = this.add
+      .text(width / 2, height / 2 + 78, "Fechar", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "14px",
+        color: "#2c1a0a"
+      })
+      .setOrigin(0.5)
+      .setDepth(283);
+    const kill = () => {
+      [veil, panel, title, body, close, closeTxt].forEach((o) => o.destroy());
+    };
+    veil.on("pointerdown", kill);
+    close.on("pointerdown", kill);
+  }
+
+  /** Simula anúncio recompensado (placeholder até AdMob real). */
+  private watchOwlAd() {
+    if (this.adWatching || !owlAdReady()) return;
+    this.adWatching = true;
+
+    // Congela o mago no lugar (senão a velocity continua e ele “voa”)
+    this.savedPlayerX = this.player.x;
+    this.savedPlayerY = this.player.y;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+    body.moves = false;
+    this.player.setPosition(this.savedPlayerX, this.savedPlayerY);
+    this.player.play(playerAnimKey("idle", this.facing), true);
+    const shadow = this.player.getData("shadow") as Phaser.GameObjects.Image | undefined;
+    shadow?.setPosition(this.savedPlayerX, this.savedPlayerY + 26);
+
+    const { width, height } = this.scale;
+    const veil = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x0a0612, 0.82)
+      .setDepth(300);
+    const label = this.add
+      .text(width / 2, height / 2 - 20, "Assistindo anúncio…", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "20px",
+        color: "#ffffff"
+      })
+      .setOrigin(0.5)
+      .setDepth(301);
+    const sub = this.add
+      .text(width / 2, height / 2 + 18, `+${OWL_AD_REWARD_GEMS} gemas`, {
+        fontFamily: "Arial",
+        fontSize: "14px",
+        color: "#82e0aa"
+      })
+      .setOrigin(0.5)
+      .setDepth(301);
+
+    this.time.delayedCall(2200, () => {
+      const gained = claimOwlAdReward();
+      veil.destroy();
+      label.destroy();
+      sub.destroy();
+
+      body.moves = true;
+      this.player.setPosition(this.savedPlayerX, this.savedPlayerY);
+      shadow?.setPosition(this.savedPlayerX, this.savedPlayerY + 26);
+      this.battleHold = 0;
+      this.adWatching = false;
+
+      this.gemHud.setText(String(metaState.gems));
+      this.flashPrompt(
+        gained > 0 ? `+${gained} gemas!` : "Anúncio em cooldown"
+      );
+    });
   }
 
   update(_t: number, dtMs: number) {
     if (!this.player?.active) return;
+
+    // Durante o anúncio: mantém parado no ponto salvo
+    if (this.adWatching) {
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(0, 0);
+      this.player.setPosition(this.savedPlayerX, this.savedPlayerY);
+      const shadow = this.player.getData("shadow") as Phaser.GameObjects.Image | undefined;
+      shadow?.setPosition(this.savedPlayerX, this.savedPlayerY + 26);
+      return;
+    }
+
     const dt = dtMs / 1000;
 
     const v = this.joystick.getVector().clone();
@@ -425,8 +564,8 @@ export class LobbyScene extends Phaser.Scene {
       if (door && door.texture.key !== "tile_door_open") {
         door.setTexture("tile_door_open").setDisplaySize(48, 48);
       }
-      this.prompt.setText("↑ Entrar na batalha…").setAlpha(1);
-      if (this.battleHold > 0.4) this.startBattle();
+      this.prompt.setText("↑ Campanha (6 reinos)…").setAlpha(1);
+      if (this.battleHold > 0.4) this.startBattle("campaign");
     } else if (Phaser.Geom.Rectangle.Contains(this.shopZone, this.player.x, this.player.y)) {
       this.battleHold += dt;
       if (door && door.texture.key !== "tile_door_closed") {
@@ -434,8 +573,25 @@ export class LobbyScene extends Phaser.Scene {
       }
       this.prompt.setText("👕 Abrir armário…").setAlpha(1);
       if (this.battleHold > 0.35) {
-        this.joystick.destroy();
-        this.scene.start("Equip");
+        this.battleHold = 0;
+        this.openEquipFromLobby();
+      }
+    } else if (Phaser.Geom.Rectangle.Contains(this.owlZone, this.player.x, this.player.y)) {
+      this.battleHold += dt;
+      if (door && door.texture.key !== "tile_door_closed") {
+        door.setTexture("tile_door_closed").setDisplaySize(48, 48);
+      }
+      const ready = owlAdReady();
+      this.prompt
+        .setText(
+          ready
+            ? `▶ Assistir anúncio (+${OWL_AD_REWARD_GEMS} gemas)`
+            : "⏳ Anúncio em cooldown…"
+        )
+        .setAlpha(1);
+      if (ready && this.battleHold > 0.35) {
+        this.battleHold = 0;
+        this.watchOwlAd();
       }
     } else {
       this.battleHold = 0;

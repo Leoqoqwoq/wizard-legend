@@ -88,6 +88,10 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 48,
       frameHeight: 48
     });
+    this.load.spritesheet("lobby_owl", asset("assets/lobby/owl.png"), {
+      frameWidth: 16,
+      frameHeight: 16
+    });
     this.load.image("lobby_table", asset("assets/lobby/table.png"));
     this.load.image("lobby_shelf", asset("assets/lobby/shelf.png"));
     this.load.image("lobby_stand", asset("assets/lobby/stand.png"));
@@ -166,6 +170,14 @@ export class BootScene extends Phaser.Scene {
         }),
         frameRate: 12,
         repeat: 0
+      });
+    }
+    if (!this.anims.exists("owl-idle")) {
+      this.anims.create({
+        key: "owl-idle",
+        frames: this.anims.generateFrameNumbers("lobby_owl", { start: 0, end: 3 }),
+        frameRate: 4,
+        repeat: -1
       });
     }
 

@@ -7,6 +7,7 @@ import {
   skillIconKey,
   type SkillId
 } from "../game/skills";
+import { isBossFloor } from "../game/RunState";
 
 export class SkillSelectScene extends Phaser.Scene {
   private choices: SkillId[] = [];
@@ -256,6 +257,8 @@ export class SkillSelectScene extends Phaser.Scene {
     runState.pendingSkillPick = false;
     runState.clearedFloor = false;
     runState.floor += 1;
-    this.scene.start("Game");
+    // Antes de boss de reino (10–60) ou Ultra Boss (61)
+    if (isBossFloor(runState.floor)) this.scene.start("PrepRoom");
+    else this.scene.start("Game");
   }
 }

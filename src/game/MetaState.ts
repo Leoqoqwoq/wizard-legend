@@ -155,7 +155,12 @@ export interface MetaState {
   ownedBooks: BookId[];
   equippedCape: CapeId;
   equippedBook: BookId;
+  /** Recorde do modo infinito (ranking) */
   bestFloor: number;
+  /** Melhor andar na campanha (1–61) */
+  bestCampaignFloor: number;
+  /** timestamp ms do último anúncio da coruja */
+  lastOwlAdAt: number;
 }
 
 export function createMetaState(): MetaState {
@@ -166,8 +171,25 @@ export function createMetaState(): MetaState {
     ownedBooks: ["none"],
     equippedCape: "default",
     equippedBook: "none",
-    bestFloor: 1
+    bestFloor: 1,
+    bestCampaignFloor: 1,
+    lastOwlAdAt: 0
   };
+}
+
+/** Cooldown do anúncio da coruja (ms). */
+export const OWL_AD_COOLDOWN_MS = 60_000;
+export const OWL_AD_REWARD_GEMS = 25;
+
+export function owlAdReady() {
+  return Date.now() - metaState.lastOwlAdAt >= OWL_AD_COOLDOWN_MS;
+}
+
+export function claimOwlAdReward(): number {
+  if (!owlAdReady()) return 0;
+  metaState.lastOwlAdAt = Date.now();
+  metaState.gems += OWL_AD_REWARD_GEMS;
+  return OWL_AD_REWARD_GEMS;
 }
 
 export const metaState: MetaState = createMetaState();

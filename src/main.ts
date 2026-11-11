@@ -3,6 +3,7 @@ import { BootScene } from "./scenes/BootScene";
 import { EquipScene } from "./scenes/EquipScene";
 import { GameScene } from "./scenes/GameScene";
 import { LobbyScene } from "./scenes/LobbyScene";
+import { PrepRoomScene } from "./scenes/PrepRoomScene";
 import { SkillSelectScene } from "./scenes/SkillSelectScene";
 
 const WIDTH = 390;
@@ -25,7 +26,7 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
   },
-  scene: [BootScene, LobbyScene, EquipScene, GameScene, SkillSelectScene],
+  scene: [BootScene, LobbyScene, EquipScene, GameScene, SkillSelectScene, PrepRoomScene],
   input: {
     activePointers: 3
   }

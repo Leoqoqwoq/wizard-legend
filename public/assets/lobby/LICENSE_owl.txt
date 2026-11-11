@@ -1,0 +1,3 @@
+Cute lobby owl 16x16 (original pixel art for Wizard Legend)
+License: free to use with this project (original work)
+Palette inspired by Critters-style lobby NPCs.

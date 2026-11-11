@@ -77,6 +77,9 @@ export class GameScene extends Phaser.Scene {
   private bossHpGfx?: Phaser.GameObjects.Graphics;
   private bossHpLabel?: Phaser.GameObjects.Text;
   private laserGfx?: Phaser.GameObjects.Graphics;
+  private paused = false;
+  private runEnded = false;
+  private pauseUi: Phaser.GameObjects.GameObject[] = [];
 
   private readonly playerSpeed = 180;
 
@@ -92,6 +95,9 @@ export class GameScene extends Phaser.Scene {
 
     const { width, height } = this.scale;
     this.cleared = false;
+    this.paused = false;
+    this.runEnded = false;
+    this.pauseUi = [];
     this.attackTimer = 0;
     this.invuln = 0;
     this.elves = [];
@@ -111,11 +117,13 @@ export class GameScene extends Phaser.Scene {
     this.enemies = this.physics.add.group();
     this.playerBullets = this.physics.add.group({
       defaultKey: "bullet_player",
-      maxSize: 80
+      maxSize: 160,
+      runChildUpdate: false
     });
     this.enemyBullets = this.physics.add.group({
       defaultKey: "bullet_ring",
-      maxSize: 80
+      maxSize: 160,
+      runChildUpdate: false
     });
 
     this.targetRing = this.add
@@ -149,8 +157,8 @@ export class GameScene extends Phaser.Scene {
       undefined,
       this
     );
-    // Tiro do mago só some na parede / bloco (ou quica com skill)
-    this.physics.add.collider(
+    // Overlap (não collider): evita tiro preso/empurrado pelo bloco
+    this.physics.add.overlap(
       this.playerBullets,
       this.blocks,
       this.onPlayerBulletHitWall as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
@@ -158,9 +166,9 @@ export class GameScene extends Phaser.Scene {
         bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
       ) => {
         const bullet = bulletObj as Phaser.Physics.Arcade.Image;
+        if (!bullet.active) return false;
         const spawnAt = (bullet.getData("spawnAt") as number) || 0;
-        // Não processa colisão nos primeiros frames (hitbox/spawn)
-        return this.time.now - spawnAt >= 80;
+        return this.time.now - spawnAt >= 60;
       },
       this
     );
@@ -597,18 +605,18 @@ export class GameScene extends Phaser.Scene {
   private createHud() {
     const { width } = this.scale;
 
-    // Pause fake
-    this.add
+    const pauseBg = this.add
       .rectangle(28, 28, 36, 36, 0x566573, 0.85)
       .setScrollFactor(0)
       .setDepth(100)
-      .setStrokeStyle(2, 0xffffff, 0.3);
-
+      .setStrokeStyle(2, 0xffffff, 0.3)
+      .setInteractive({ useHandCursor: true });
     this.add
       .text(28, 28, "❚❚", { fontSize: "14px", color: "#fff" })
       .setOrigin(0.5)
       .setDepth(101)
       .setScrollFactor(0);
+    pauseBg.on("pointerdown", () => this.togglePause());
 
     // Coins
     this.add
@@ -662,6 +670,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_t: number, dtMs: number) {
+    if (this.paused) return;
     const dt = dtMs / 1000;
     if (!this.player?.active) return;
 
@@ -789,42 +798,48 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnPlayerBullet(angle: number, key: string) {
-    const usePackBolt = key === "bullet_player";
-    // Nasce um pouco à frente pra não colidir no bloco sob o mago
-    const ox = this.player.x + Math.cos(angle) * 18;
-    const oy = this.player.y + Math.sin(angle) * 18;
-    const b = this.playerBullets.get(
-      ox,
-      oy,
-      usePackBolt ? "wizard" : key
-    ) as Phaser.Physics.Arcade.Image | null;
+    const ox = this.player.x + Math.cos(angle) * 26;
+    const oy = this.player.y + Math.sin(angle) * 26;
+    this.armPlayerBullet(ox, oy, angle, key, 420, {
+      bounces: runState.skills.wall_bounce ?? 0,
+      rico: runState.skills.ricochet ?? 0,
+      dmg: 1
+    });
+  }
+
+  /** Reset completo do pool — evita hitbox/textura/velocidade “fantasma”. */
+  private armPlayerBullet(
+    x: number,
+    y: number,
+    angle: number,
+    key: string,
+    speed: number,
+    data: { bounces: number; rico: number; dmg: number }
+  ) {
+    const tex = key === "bullet_player" ? "bullet_player" : key;
+    const b = this.playerBullets.get(x, y, tex) as Phaser.Physics.Arcade.Image | null;
     if (!b) return;
 
-    b.setActive(true).setVisible(true).setDepth(16).clearTint();
-    if (usePackBolt) {
-      b.setTexture("wizard", 68);
-      b.setScale(1.6);
-      b.setRotation(angle + Math.PI / 2);
-    } else {
-      b.setTexture(key);
-      b.setScale(1);
-      b.setRotation(0);
-    }
+    b.setTexture(tex);
+    b.setActive(true).setVisible(true).setDepth(16);
+    b.clearTint();
+    b.setScale(tex === "bullet_dark" ? 1.15 : 1.05);
+    b.setRotation(0);
+    b.setPosition(x, y);
 
-    // Hitbox pequena — o frame do pack é 48×48 e matava o tiro cedo nos blocos
     const body = b.body as Phaser.Physics.Arcade.Body | null;
     if (!body) return;
     body.enable = true;
-    body.setSize(10, 10);
-    body.setOffset((b.width - 10) / 2, (b.height - 10) / 2);
     body.setAllowGravity(false);
-
-    const speed = 420;
+    body.setCircle(5, b.width / 2 - 5, b.height / 2 - 5);
+    body.reset(x, y);
     this.physics.velocityFromRotation(angle, speed, body.velocity);
-    b.setData("bounces", runState.skills.wall_bounce ?? 0);
-    b.setData("rico", runState.skills.ricochet ?? 0);
-    b.setData("dmg", 1);
+
+    b.setData("bounces", data.bounces);
+    b.setData("rico", data.rico);
+    b.setData("dmg", data.dmg);
     b.setData("spawnAt", this.time.now);
+    b.setData("lastBounceAt", 0);
   }
 
   /** Destrói tiro nas bordas da arena (paredes do mapa). */
@@ -857,22 +872,34 @@ export class GameScene extends Phaser.Scene {
 
   private onPlayerBulletHitWall(
     bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
-    _wallObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+    wallObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
   ) {
     const bullet = bulletObj as Phaser.Physics.Arcade.Image;
     if (!bullet.active) return;
 
-    // Ignora colisão logo no spawn (evita sumir no bloco ao lado do mago)
     const spawnAt = (bullet.getData("spawnAt") as number) || 0;
-    if (this.time.now - spawnAt < 80) return;
+    if (this.time.now - spawnAt < 60) return;
 
     const bounces = (bullet.getData("bounces") as number) || 0;
     if (bounces > 0) {
+      const lastBounce = (bullet.getData("lastBounceAt") as number) || 0;
+      if (this.time.now - lastBounce < 50) return;
       bullet.setData("bounces", bounces - 1);
-      const body = bullet.body as Phaser.Physics.Arcade.Body;
-      if (body.blocked.left || body.blocked.right) body.velocity.x *= -1;
-      if (body.blocked.up || body.blocked.down) body.velocity.y *= -1;
-      bullet.setRotation(Math.atan2(body.velocity.y, body.velocity.x) + Math.PI / 2);
+      bullet.setData("lastBounceAt", this.time.now);
+      const body = bullet.body as Phaser.Physics.Arcade.Body | null;
+      if (!body) {
+        this.killPlayerBullet(bullet);
+        return;
+      }
+      // Overlap não preenche blocked.* — rebate pela normal do bloco
+      const wall = wallObj as Phaser.Physics.Arcade.Sprite;
+      const dx = bullet.x - wall.x;
+      const dy = bullet.y - wall.y;
+      if (Math.abs(dx) > Math.abs(dy)) body.velocity.x *= -1;
+      else body.velocity.y *= -1;
+      bullet.x += Math.sign(body.velocity.x || dx) * 8;
+      bullet.y += Math.sign(body.velocity.y || dy) * 8;
+      body.reset(bullet.x, bullet.y);
       return;
     }
 
@@ -975,23 +1002,7 @@ export class GameScene extends Phaser.Scene {
     const count = 8 + Math.floor(runState.floor / 20);
     for (let i = 0; i < count; i++) {
       const a = angle + (i / count) * Math.PI * 2;
-      const b = this.enemyBullets.get(e.x, e.y, "bullet_ring") as Phaser.Physics.Arcade.Image;
-      if (!b) continue;
-      b.setActive(true).setVisible(true);
-      b.setTexture("bullet_ring");
-      b.setTint(0xff9ff3);
-      b.body.enable = true;
-      this.physics.velocityFromRotation(
-        a,
-        110 + runState.floor * 3,
-        b.body.velocity as Phaser.Math.Vector2
-      );
-      this.time.delayedCall(2800, () => {
-        if (b.active) {
-          b.clearTint();
-          this.enemyBullets.killAndHide(b);
-        }
-      });
+      this.armEnemyBullet(e.x, e.y, a, 110 + runState.floor * 3, 0xff9ff3, 1, 2800);
     }
   }
 
@@ -1026,29 +1037,15 @@ export class GameScene extends Phaser.Scene {
       for (let i = 0; i < 5; i++) {
         this.time.delayedCall(i * 40, () => {
           if (!e.active) return;
-          const b = this.enemyBullets.get(
+          this.armEnemyBullet(
             e.x,
             e.y,
-            "bullet_ring"
-          ) as Phaser.Physics.Arcade.Image;
-          if (!b) return;
-          b.setActive(true).setVisible(true);
-          b.setTexture("bullet_ring");
-          b.setTint(0xff6bcb);
-          b.setScale(1.35);
-          b.body.enable = true;
-          this.physics.velocityFromRotation(
             angle,
             280 + runState.floor * 4,
-            b.body.velocity as Phaser.Math.Vector2
+            0xff6bcb,
+            1.35,
+            1600
           );
-          this.time.delayedCall(1600, () => {
-            if (b.active) {
-              b.clearTint();
-              b.setScale(1);
-              this.enemyBullets.killAndHide(b);
-            }
-          });
         });
       }
 
@@ -1062,19 +1059,50 @@ export class GameScene extends Phaser.Scene {
     data.busy = true;
     e.play(enemyAnimKey(data.kind, "attack", data.facing), true);
 
-    const b = this.enemyBullets.get(e.x, e.y, "bullet_ring") as Phaser.Physics.Arcade.Image;
+    this.armEnemyBullet(e.x, e.y, angle, 140 + runState.floor * 5, 0xffffff, 1, 2500);
+  }
+
+  private armEnemyBullet(
+    x: number,
+    y: number,
+    angle: number,
+    speed: number,
+    tint: number,
+    scale: number,
+    ttlMs: number
+  ) {
+    const b = this.enemyBullets.get(x, y, "bullet_ring") as Phaser.Physics.Arcade.Image | null;
     if (!b) return;
-    b.setActive(true).setVisible(true);
     b.setTexture("bullet_ring");
-    b.body.enable = true;
-    this.physics.velocityFromRotation(
-      angle,
-      140 + runState.floor * 5,
-      b.body.velocity as Phaser.Math.Vector2
-    );
-    this.time.delayedCall(2500, () => {
-      if (b.active) this.enemyBullets.killAndHide(b);
+    b.setActive(true).setVisible(true).setDepth(16);
+    if (tint !== 0xffffff) b.setTint(tint);
+    else b.clearTint();
+    b.setScale(scale);
+    b.setPosition(x, y);
+
+    const body = b.body as Phaser.Physics.Arcade.Body | null;
+    if (!body) return;
+    body.enable = true;
+    body.setAllowGravity(false);
+    body.setCircle(5, b.width / 2 - 5, b.height / 2 - 5);
+    body.reset(x, y);
+    this.physics.velocityFromRotation(angle, speed, body.velocity);
+
+    this.time.delayedCall(ttlMs, () => {
+      if (b.active) this.killEnemyBullet(b);
     });
+  }
+
+  private killEnemyBullet(b: Phaser.Physics.Arcade.Image) {
+    if (!b.active && !(b.body as Phaser.Physics.Arcade.Body | null)?.enable) return;
+    b.clearTint();
+    b.setScale(1);
+    this.enemyBullets.killAndHide(b);
+    const body = b.body as Phaser.Physics.Arcade.Body | null;
+    if (body) {
+      body.enable = false;
+      body.stop();
+    }
   }
 
   private updateElves(dt: number) {
@@ -1093,22 +1121,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnPlayerBulletFrom(x: number, y: number, angle: number, key: string) {
-    const b = this.playerBullets.get(x, y, key) as Phaser.Physics.Arcade.Image | null;
-    if (!b) return;
-    b.setActive(true).setVisible(true).setDepth(16).clearTint();
-    b.setTexture(key);
-    b.setScale(1);
-    b.setRotation(0);
-    const body = b.body as Phaser.Physics.Arcade.Body | null;
-    if (!body) return;
-    body.enable = true;
-    body.setSize(10, 10);
-    body.setOffset((b.width - 10) / 2, (b.height - 10) / 2);
-    this.physics.velocityFromRotation(angle, 400, body.velocity);
-    b.setData("dmg", 1);
-    b.setData("bounces", 0);
-    b.setData("rico", 0);
-    b.setData("spawnAt", this.time.now);
+    this.armPlayerBullet(x, y, angle, key, 400, { bounces: 0, rico: 0, dmg: 1 });
   }
 
   private updateEnemyHpBars() {
@@ -1171,8 +1184,9 @@ export class GameScene extends Phaser.Scene {
       data.frozen = 1.2;
     }
 
+    const body = bullet.body as Phaser.Physics.Arcade.Body | null;
     const rico = (bullet.getData("rico") as number) || 0;
-    if (rico > 0) {
+    if (rico > 0 && body) {
       bullet.setData("rico", rico - 1);
       const next = this.enemies.getChildren().find((o) => {
         const e = o as Phaser.Physics.Arcade.Sprite;
@@ -1180,16 +1194,16 @@ export class GameScene extends Phaser.Scene {
       }) as Phaser.Physics.Arcade.Sprite | undefined;
       if (next) {
         const angle = Phaser.Math.Angle.Between(bullet.x, bullet.y, next.x, next.y);
-        this.physics.velocityFromRotation(angle, 300, bullet.body.velocity as Phaser.Math.Vector2);
+        this.physics.velocityFromRotation(angle, 300, body.velocity);
         return;
       }
     }
 
     const bounces = (bullet.getData("bounces") as number) || 0;
-    if (bounces > 0) {
+    if (bounces > 0 && body) {
       bullet.setData("bounces", bounces - 1);
-      bullet.body.velocity.x *= -1;
-      bullet.body.velocity.y *= -1;
+      body.velocity.x *= -1;
+      body.velocity.y *= -1;
       return;
     }
 
@@ -1272,13 +1286,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onEnemyHitPlayer(
-    _playerObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
-    bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+    bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    _playerObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
   ) {
+    // overlap(enemyBullets, player) → 1º = tiro, 2º = mago
     const bullet = bulletObj as Phaser.Physics.Arcade.Image;
-    if (!bullet.active) return;
-    this.enemyBullets.killAndHide(bullet);
-    bullet.body.enable = false;
+    if (!bullet?.active) return;
+    this.killEnemyBullet(bullet);
     this.hurtPlayer(1);
   }
 
@@ -1344,7 +1358,83 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private togglePause() {
+    if (this.runEnded) return;
+    if (this.paused) {
+      this.resumeGame();
+      return;
+    }
+    this.paused = true;
+    this.physics.pause();
+    const body = this.player.body as Phaser.Physics.Arcade.Body | undefined;
+    body?.setVelocity(0, 0);
+
+    const { width, height } = this.scale;
+    const veil = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x0a0612, 0.72)
+      .setScrollFactor(0)
+      .setDepth(250)
+      .setInteractive();
+    const title = this.add
+      .text(width / 2, height / 2 - 70, "PAUSE", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "36px",
+        color: "#ffffff",
+        stroke: "#000",
+        strokeThickness: 4
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(251);
+    const resumeBg = this.add
+      .rectangle(width / 2, height / 2 + 10, 180, 44, 0x8e44ad)
+      .setScrollFactor(0)
+      .setDepth(251)
+      .setInteractive({ useHandCursor: true });
+    const resumeTxt = this.add
+      .text(width / 2, height / 2 + 10, "Continuar", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "18px",
+        color: "#fff"
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(252);
+    const lobbyBg = this.add
+      .rectangle(width / 2, height / 2 + 70, 180, 44, 0x5d6d7e)
+      .setScrollFactor(0)
+      .setDepth(251)
+      .setInteractive({ useHandCursor: true });
+    const lobbyTxt = this.add
+      .text(width / 2, height / 2 + 70, "Lobby", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "18px",
+        color: "#fff"
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(252);
+
+    this.pauseUi = [veil, title, resumeBg, resumeTxt, lobbyBg, lobbyTxt];
+    resumeBg.on("pointerdown", () => this.resumeGame());
+    lobbyBg.on("pointerdown", () => {
+      this.recordProgress();
+      this.joystick?.destroy();
+      resetRun();
+      this.scene.start("Lobby");
+    });
+  }
+
+  private resumeGame() {
+    if (!this.paused) return;
+    this.paused = false;
+    this.pauseUi.forEach((o) => o.destroy());
+    this.pauseUi = [];
+    this.physics.resume();
+  }
+
   private showCampaignVictory() {
+    this.runEnded = true;
     this.physics.pause();
     runState.campaignWon = true;
     this.recordProgress();
@@ -1418,6 +1508,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private gameOver() {
+    this.runEnded = true;
     this.physics.pause();
     const { width, height } = this.scale;
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.65).setDepth(200);

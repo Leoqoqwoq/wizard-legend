@@ -359,7 +359,7 @@ export class LobbyScene extends Phaser.Scene {
       { icon: "icon_wardrobe", action: openEquip, tint: 0xffe0b2 },
       {
         icon: "icon_infinity",
-        action: () => this.startBattle("endless"),
+        action: () => this.confirmEndless(),
         tint: 0x7fdbff
       },
       { icon: "icon_swords", action: () => this.startBattle("campaign"), active: true },
@@ -403,6 +403,80 @@ export class LobbyScene extends Phaser.Scene {
     this.joystick.destroy();
     resetRun(mode);
     this.scene.start("Game");
+  }
+
+  /** Aviso antes do modo infinito (sem fim, ranking por floor). */
+  private confirmEndless() {
+    const { width, height } = this.scale;
+    const veil = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x0a0612, 0.78)
+      .setDepth(280)
+      .setInteractive();
+    const panel = this.add
+      .image(width / 2, height / 2, "ui_panel_card")
+      .setDisplaySize(300, 250)
+      .setDepth(281);
+    const title = this.add
+      .text(width / 2, height / 2 - 92, "Modo Infinito", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "20px",
+        color: "#3b2414"
+      })
+      .setOrigin(0.5)
+      .setDepth(282);
+    const body = this.add
+      .text(
+        width / 2,
+        height / 2 - 18,
+        "Sem fim — só para quando morrer.\nBoss a cada 10 andares.\nRanking pelo floor mais alto.\n\nTem certeza?",
+        {
+          fontFamily: "Arial",
+          fontSize: "14px",
+          color: "#2c1a0a",
+          align: "center",
+          lineSpacing: 4
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(282);
+
+    const cancelBg = this.add
+      .rectangle(width / 2 - 70, height / 2 + 88, 110, 40, 0x5d6d7e)
+      .setDepth(282)
+      .setInteractive({ useHandCursor: true });
+    const cancelTxt = this.add
+      .text(width / 2 - 70, height / 2 + 88, "Cancelar", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "14px",
+        color: "#ffffff"
+      })
+      .setOrigin(0.5)
+      .setDepth(283);
+
+    const okBg = this.add
+      .rectangle(width / 2 + 70, height / 2 + 88, 110, 40, 0x8e44ad)
+      .setDepth(282)
+      .setInteractive({ useHandCursor: true });
+    const okTxt = this.add
+      .text(width / 2 + 70, height / 2 + 88, "Começar", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "14px",
+        color: "#ffffff"
+      })
+      .setOrigin(0.5)
+      .setDepth(283);
+
+    const kill = () => {
+      [veil, panel, title, body, cancelBg, cancelTxt, okBg, okTxt].forEach((o) =>
+        o.destroy()
+      );
+    };
+    cancelBg.on("pointerdown", kill);
+    veil.on("pointerdown", kill);
+    okBg.on("pointerdown", () => {
+      kill();
+      this.startBattle("endless");
+    });
   }
 
   /** Ranking: infinito (recorde principal) + campanha. */

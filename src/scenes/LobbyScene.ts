@@ -33,6 +33,8 @@ export class LobbyScene extends Phaser.Scene {
   private adWatching = false;
   private savedPlayerX = 0;
   private savedPlayerY = 0;
+  /** Evita reabrir armário/porta no mesmo frame do spawn. */
+  private interactLock = 0;
   private readonly speed = 160;
 
   constructor() {
@@ -43,6 +45,10 @@ export class LobbyScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const margin = 28;
     this.room = new Phaser.Geom.Rectangle(margin, 70, width - margin * 2, height - 200);
+    // scene.restart reaproveita a instância — limpa trava do anúncio/movimento
+    this.adWatching = false;
+    this.battleHold = 0;
+    this.interactLock = 0.75;
 
     this.drawRoom();
     this.spawnDecor();
@@ -52,7 +58,11 @@ export class LobbyScene extends Phaser.Scene {
     this.buildBottomNav();
 
     this.joystick = new Joystick(this);
-    followBrowserFrame(this, () => this.joystick?.destroy());
+    followBrowserFrame(
+      this,
+      () => this.joystick?.destroy(),
+      (w, h) => this.reflowLayout(w, h)
+    );
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
       this.wasd = this.input.keyboard.addKeys("W,A,S,D") as Record<
@@ -278,16 +288,25 @@ export class LobbyScene extends Phaser.Scene {
   private spawnPlayer() {
     const r = this.room;
     const ret = takeLobbyReturn();
-    const px = ret.x ?? r.centerX;
-    const py = ret.y ?? r.bottom - 70;
+    let px = ret.x ?? r.centerX;
+    let py = ret.y ?? r.bottom - 70;
     this.facing = (ret.facing as Facing) || "up";
+    // Sempre nasce na faixa inferior livre (fora loja / coruja / porta)
+    px = Phaser.Math.Clamp(px, r.x + 40, r.right - 40);
+    py = Phaser.Math.Clamp(Math.max(py, r.centerY + 20), r.centerY + 10, r.bottom - 36);
 
     this.player = this.physics.add.sprite(px, py, "wizard", 0);
     this.player.setDepth(10);
     this.player.setScale(2.2);
     this.player.setRotation(0);
     this.player.setSize(14, 18).setOffset(17, 22);
-    (this.player.body as Phaser.Physics.Arcade.Body).moves = true;
+    {
+      const b = this.player.body as Phaser.Physics.Arcade.Body;
+      b.enable = true;
+      b.moves = true;
+      b.setAllowGravity(false);
+      b.setVelocity(0, 0);
+    }
     const idleKey = playerAnimKey("idle", this.facing);
     if (this.anims.exists(idleKey)) this.player.play(idleKey);
     else this.player.setFrame(0);
@@ -302,7 +321,12 @@ export class LobbyScene extends Phaser.Scene {
   private openEquipFromLobby() {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
-    saveLobbyReturn(this.player.x, this.player.y, this.facing);
+    // Guarda um pouco abaixo da loja — senão ao voltar reabre o armário na hora
+    saveLobbyReturn(
+      this.player.x,
+      Math.min(this.player.y + 60, this.room.bottom - 40),
+      this.facing
+    );
     this.joystick.destroy();
     this.scene.start("Equip");
   }
@@ -537,6 +561,31 @@ export class LobbyScene extends Phaser.Scene {
     close.on("pointerdown", kill);
   }
 
+  /** Atualiza área jogável / stick sem reiniciar a cena. */
+  private reflowLayout(width: number, height: number) {
+    const margin = 28;
+    this.room.setTo(margin, 70, width - margin * 2, height - 200);
+    this.shopZone.setTo(this.room.x + 20, this.room.y + 40, 110, 90);
+    this.battleZone.setTo(this.room.centerX - 40, this.room.y + 8, 80, 50);
+    this.owlZone.setTo(this.room.right - 88, this.room.y + 100, 80, 70);
+    this.prompt?.setPosition(width / 2, height - 175);
+    this.joystick?.reflow();
+    if (this.player?.active) {
+      this.player.x = Phaser.Math.Clamp(
+        this.player.x,
+        this.room.x + 18,
+        this.room.right - 18
+      );
+      this.player.y = Phaser.Math.Clamp(
+        this.player.y,
+        this.room.y + 40,
+        this.room.bottom - 18
+      );
+      const body = this.player.body as Phaser.Physics.Arcade.Body | null;
+      if (body && !this.adWatching) body.moves = true;
+    }
+  }
+
   /** Simula anúncio recompensado (placeholder até AdMob real). */
   private watchOwlAd() {
     if (this.adWatching || !owlAdReady()) return;
@@ -574,31 +623,45 @@ export class LobbyScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(301);
 
-    this.time.delayedCall(2200, () => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
       const gained = claimOwlAdReward();
-      veil.destroy();
-      label.destroy();
-      sub.destroy();
+      try {
+        veil.destroy();
+        label.destroy();
+        sub.destroy();
+      } catch {
+        /* ignore */
+      }
 
-      body.moves = true;
-      this.player.setPosition(this.savedPlayerX, this.savedPlayerY);
-      shadow?.setPosition(this.savedPlayerX, this.savedPlayerY + 26);
+      if (body && body.world) body.moves = true;
+      if (this.player?.active) {
+        this.player.setPosition(this.savedPlayerX, this.savedPlayerY);
+        shadow?.setPosition(this.savedPlayerX, this.savedPlayerY + 26);
+      }
       this.battleHold = 0;
       this.adWatching = false;
 
-      this.gemHud.setText(String(metaState.gems));
+      this.gemHud?.setText(String(metaState.gems));
       this.flashPrompt(
         gained > 0 ? `+${gained} gemas!` : "Anúncio em cooldown"
       );
-    });
+    };
+
+    // Phaser timer + fallback real: se o loop dormir, o mago não fica preso
+    this.time.delayedCall(2200, finish);
+    window.setTimeout(finish, 2400);
   }
 
   update(_t: number, dtMs: number) {
     if (!this.player?.active) return;
+    const body = this.player.body as Phaser.Physics.Arcade.Body | null;
+    if (!body) return;
 
     // Durante o anúncio: mantém parado no ponto salvo
     if (this.adWatching) {
-      const body = this.player.body as Phaser.Physics.Arcade.Body;
       body.setVelocity(0, 0);
       this.player.setPosition(this.savedPlayerX, this.savedPlayerY);
       const shadow = this.player.getData("shadow") as Phaser.GameObjects.Image | undefined;
@@ -609,7 +672,7 @@ export class LobbyScene extends Phaser.Scene {
     const dt = dtMs / 1000;
 
     if (!this.joystick) return;
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    if (!body.enable) body.enable = true;
     if (!body.moves) body.moves = true;
 
     const v = this.joystick.getVector().clone();
@@ -640,6 +703,12 @@ export class LobbyScene extends Phaser.Scene {
     );
 
     const door = this.children.getByName("lobbyDoor") as Phaser.GameObjects.Image | null;
+
+    if (this.interactLock > 0) {
+      this.interactLock -= dt;
+      this.battleHold = 0;
+      return;
+    }
 
     // Interações por proximidade
     if (Phaser.Geom.Rectangle.Contains(this.battleZone, this.player.x, this.player.y)) {

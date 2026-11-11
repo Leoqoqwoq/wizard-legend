@@ -22,6 +22,11 @@ export function saveLobbyReturn(x: number, y: number, facing: string) {
   lobbyReturn.facing = facing;
 }
 
+export function clearLobbyReturn() {
+  lobbyReturn.x = null;
+  lobbyReturn.y = null;
+}
+
 export function takeLobbyReturn() {
   const pos = { x: lobbyReturn.x, y: lobbyReturn.y, facing: lobbyReturn.facing };
   lobbyReturn.x = null;

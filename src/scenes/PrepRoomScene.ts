@@ -45,7 +45,11 @@ export class PrepRoomScene extends Phaser.Scene {
     this.buildHud();
 
     this.joystick = new Joystick(this);
-    followBrowserFrame(this, () => this.joystick?.destroy());
+    followBrowserFrame(
+      this,
+      () => this.joystick?.destroy(),
+      (w, h) => this.reflowLayout(w, h)
+    );
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
       this.wasd = this.input.keyboard.addKeys("W,A,S,D") as Record<
@@ -254,6 +258,29 @@ export class PrepRoomScene extends Phaser.Scene {
         .setDisplaySize(20, 18)
         .setDepth(100);
       if (i >= runState.hp) pip.setTint(0x555555).setAlpha(0.55);
+    }
+  }
+
+  private reflowLayout(width: number, height: number) {
+    const margin = 28;
+    this.room.setTo(margin, 70, width - margin * 2, height - 200);
+    this.shopZone?.setTo(this.room.x + 20, this.room.y + 40, 120, 100);
+    this.exitZone?.setTo(this.room.centerX - 40, this.room.y + 8, 80, 55);
+    this.prompt?.setPosition(width / 2, height - 175);
+    this.joystick?.reflow();
+    if (this.player?.active) {
+      this.player.x = Phaser.Math.Clamp(
+        this.player.x,
+        this.room.x + 18,
+        this.room.right - 18
+      );
+      this.player.y = Phaser.Math.Clamp(
+        this.player.y,
+        this.room.y + 40,
+        this.room.bottom - 18
+      );
+      const body = this.player.body as Phaser.Physics.Arcade.Body | null;
+      if (body && !this.shopOpen) body.moves = true;
     }
   }
 

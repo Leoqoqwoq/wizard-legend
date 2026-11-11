@@ -75,6 +75,14 @@ export class Joystick {
     return this.value.lengthSq() > 0.01;
   }
 
+  /** Reposiciona o stick quando a janela muda (sem destruir listeners). */
+  reflow() {
+    if (this.active) return;
+    const { width, height } = this.scene.scale;
+    this.base.setPosition(width / 2, height - this.restY);
+    this.thumb.setPosition(width / 2, height - this.restY);
+  }
+
   destroy() {
     this.scene.input.off("pointerdown", this.onDown, this);
     this.scene.input.off("pointermove", this.onMove, this);

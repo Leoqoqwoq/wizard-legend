@@ -139,7 +139,11 @@ export class GameScene extends Phaser.Scene {
     this.spawnElevator();
 
     this.joystick = new Joystick(this);
-    followBrowserFrame(this, () => this.joystick?.destroy());
+    followBrowserFrame(
+      this,
+      () => this.joystick?.destroy(),
+      (w, h) => this.reflowLayout(w, h)
+    );
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
       this.wasd = this.input.keyboard.addKeys("W,A,S,D") as Record<
@@ -368,7 +372,9 @@ export class GameScene extends Phaser.Scene {
     this.player.setScale(2.2);
     this.player.setRotation(0);
     const pBody = this.player.body as Phaser.Physics.Arcade.Body;
+    pBody.enable = true;
     pBody.moves = true;
+    pBody.setAllowGravity(false);
     pBody.setMaxSpeed(this.playerSpeed);
     if (this.physics.world.isPaused) this.physics.resume();
     const idleKey = playerAnimKey("idle", this.facing);
@@ -693,6 +699,33 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Área jogável + stick acompanham a janela (sem scene.restart). */
+  private reflowLayout(width: number, height: number) {
+    const margin = 40;
+    this.room.setTo(margin, 80, width - margin * 2, height - 220);
+    this.joystick?.reflow();
+    if (this.player?.active) {
+      this.player.x = Phaser.Math.Clamp(
+        this.player.x,
+        this.room.x + 16,
+        this.room.right - 16
+      );
+      this.player.y = Phaser.Math.Clamp(
+        this.player.y,
+        this.room.y + 20,
+        this.room.bottom - 20
+      );
+      const body = this.player.body as Phaser.Physics.Arcade.Body | null;
+      if (body) {
+        body.moves = true;
+        if (!this.paused && !this.runEnded) body.enable = true;
+      }
+    }
+    if (this.physics.world.isPaused && !this.paused && !this.runEnded) {
+      this.physics.resume();
+    }
+  }
+
   update(_t: number, dtMs: number) {
     if (this.paused) return;
     const dt = dtMs / 1000;
@@ -701,9 +734,12 @@ export class GameScene extends Phaser.Scene {
 
     this.invuln = Math.max(0, this.invuln - dt);
 
-    // Garante que o corpo pode se mover (owl/shop às vezes deixavam moves=false)
+    // Garante corpo ativo (overlap invertido já desligou o body do mago)
     const pBody = this.player.body as Phaser.Physics.Arcade.Body | null;
-    if (pBody && !pBody.moves) pBody.moves = true;
+    if (pBody && !this.runEnded) {
+      if (!pBody.enable) pBody.enable = true;
+      if (!pBody.moves) pBody.moves = true;
+    }
     if (this.physics.world.isPaused && !this.runEnded) this.physics.resume();
 
     // Movimento (joystick + WASD/setas no desktop)
@@ -889,6 +925,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private killPlayerBullet(b: Phaser.Physics.Arcade.Image) {
+    if (!b || b === this.player || !this.playerBullets.contains(b)) return;
     if (!b.active) return;
     this.playerBullets.killAndHide(b);
     const body = b.body as Phaser.Physics.Arcade.Body | null;
@@ -1124,6 +1161,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private killEnemyBullet(b: Phaser.Physics.Arcade.Image) {
+    // Nunca desligar o corpo do mago (overlap às vezes entrega o player aqui)
+    if (!b || b === this.player || !this.enemyBullets.contains(b)) return;
     if (!b.active && !(b.body as Phaser.Physics.Arcade.Body | null)?.enable) return;
     b.clearTint();
     b.setDisplaySize(20, 20);
@@ -1198,12 +1237,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPlayerHitEnemy(
-    bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
-    enemyObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+    obj1: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    obj2: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
   ) {
-    const bullet = bulletObj as Phaser.Physics.Arcade.Image;
-    const enemy = enemyObj as Phaser.Physics.Arcade.Sprite;
-    if (!bullet.active || !enemy.active) return;
+    const bullet = this.asPlayerBullet(obj1, obj2);
+    const enemy = this.asEnemySprite(obj1, obj2);
+    if (!bullet || !enemy) return;
 
     const dmg = (bullet.getData("dmg") as number) || 1;
     this.damageEnemy(enemy, dmg);
@@ -1316,37 +1355,86 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private onEnemyHitPlayer(
-    bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
-    _playerObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  /** Phaser às vezes inverte a ordem dos args no overlap — identifica pelo grupo. */
+  private asEnemyBullet(
+    a: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    b: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
   ) {
-    // overlap(enemyBullets, player) → 1º = tiro, 2º = mago
-    const bullet = bulletObj as Phaser.Physics.Arcade.Image;
-    if (!bullet?.active) return;
+    const objs = [a, b];
+    for (const o of objs) {
+      if (!o || !("active" in o)) continue;
+      const img = o as Phaser.Physics.Arcade.Image;
+      if (img.active && this.enemyBullets.contains(img)) return img;
+    }
+    return null;
+  }
+
+  private asEnemySprite(
+    a: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    b: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ) {
+    const objs = [a, b];
+    for (const o of objs) {
+      if (!o || !("active" in o)) continue;
+      const spr = o as Phaser.Physics.Arcade.Sprite;
+      if (spr.active && this.enemies.contains(spr) && spr.getData("data")) return spr;
+    }
+    return null;
+  }
+
+  private asPlayerBullet(
+    a: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    b: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ) {
+    const objs = [a, b];
+    for (const o of objs) {
+      if (!o || !("active" in o)) continue;
+      const img = o as Phaser.Physics.Arcade.Image;
+      if (img.active && this.playerBullets.contains(img)) return img;
+    }
+    return null;
+  }
+
+  private onEnemyHitPlayer(
+    obj1: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    obj2: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ) {
+    const bullet = this.asEnemyBullet(obj1, obj2);
+    if (!bullet) return;
     this.killEnemyBullet(bullet);
     this.hurtPlayer(1);
   }
 
   private onTouchEnemy(
-    _playerObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
-    enemyObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+    obj1: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    obj2: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
   ) {
-    const enemy = enemyObj as Phaser.Physics.Arcade.Sprite;
-    if (!enemy.active) return;
+    const enemy = this.asEnemySprite(obj1, obj2);
+    if (!enemy) return;
     this.hurtPlayer(1);
-    // Thorns
     const thorns = runState.skills.thorns ?? 0;
     if (thorns > 0) this.damageEnemy(enemy, thorns);
   }
 
   private hurtPlayer(amount: number) {
-    if (this.invuln > 0 || this.cleared) return;
+    if (this.invuln > 0 || this.cleared || this.runEnded) return;
     runState.hp -= amount;
     this.invuln = 0.8;
     this.refreshHpHud();
-    this.cameras.main.shake(120, 0.01);
+    // NÃO usar camera.shake aqui — em Scale.RESIZE às vezes dorme input/física
+    this.player.setData("attacking", false);
+    const body = this.player.body as Phaser.Physics.Arcade.Body | null;
+    if (body) {
+      body.enable = true;
+      body.moves = true;
+    }
     this.player.setTint(0xff6666);
-    this.time.delayedCall(200, () => this.player.clearTint());
+    this.time.delayedCall(200, () => {
+      if (!this.player?.active) return;
+      const cape = CAPES[metaState.equippedCape];
+      if (cape.tint !== 0xffffff) this.player.setTint(cape.tint);
+      else this.player.clearTint();
+    });
 
     if (runState.hp <= 0) {
       this.gameOver();

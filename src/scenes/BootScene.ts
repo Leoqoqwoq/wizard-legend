@@ -5,7 +5,7 @@ import {
   registerEnemyPackAnims,
   registerWizardPackAnims
 } from "../game/createAnims";
-import { uiSel } from "../game/equipUi";
+import { clearLobbyReturn, uiSel } from "../game/equipUi";
 import { tuneWizardAnimRates } from "../game/playerMotion";
 import { runState } from "../game/RunState";
 import { ensureHpHeart, ensureSkillIcons } from "../game/skillIcons";
@@ -22,26 +22,70 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
+    const { width, height } = this.scale;
+    const barBg = this.add.rectangle(width / 2, height / 2, 220, 16, 0x2c1a40).setDepth(10);
+    const bar = this.add
+      .rectangle(width / 2 - 108, height / 2, 4, 10, 0x9b7ed9)
+      .setOrigin(0, 0.5)
+      .setDepth(11);
+    const label = this.add
+      .text(width / 2, height / 2 - 28, "Carregando…", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "16px",
+        color: "#ffffff"
+      })
+      .setOrigin(0.5)
+      .setDepth(11);
+
+    this.load.on("progress", (value: number) => {
+      bar.width = Math.max(4, 216 * value);
+    });
+    this.load.on("complete", () => {
+      barBg.destroy();
+      bar.destroy();
+      label.destroy();
+    });
+
     // Evita loader travado (comum se resize/HMR interrompe o Boot)
     this.load.on("loaderror", (file: Phaser.Loader.File) => {
       console.warn("[Boot] falha ao carregar", file.key, file.url);
+      // Não deixa arquivo morto segurar a fila
+      try {
+        this.load.list.delete(file);
+        this.load.inflight.delete(file);
+      } catch {
+        /* ignore */
+      }
     });
     const kick = window.setInterval(() => {
-      if (!this.sys.isActive()) {
+      if (this.game.registry.get("wlBootReady")) {
         window.clearInterval(kick);
         return;
       }
       const loader = this.load;
-      if (!loader.isLoading()) {
-        window.clearInterval(kick);
+      if (!loader || !loader.isLoading()) {
+        // Ainda no Boot e sem loading → tenta start de novo
+        if (this.sys.settings.key === "Boot" && loader && loader.list.size > 0) {
+          try {
+            loader.start();
+          } catch {
+            /* ignore */
+          }
+        } else if (!loader?.isLoading()) {
+          window.clearInterval(kick);
+        }
         return;
       }
       // Lista pendente sem nada em voo = loader morto → reinicia
       if (loader.list.size > 0 && loader.inflight.size === 0) {
         console.warn("[Boot] loader parado — reiniciando fila", loader.list.size);
-        loader.start();
+        try {
+          loader.start();
+        } catch {
+          /* ignore */
+        }
       }
-    }, 400);
+    }, 350);
 
     this.load.spritesheet("wizard", asset("assets/wizard_sheet.png"), {
       frameWidth: 48,
@@ -229,7 +273,10 @@ export class BootScene extends Phaser.Scene {
     if (floorMatch) {
       runState.floor = Math.max(1, Number(floorMatch[1]) || 1);
     }
+    this.game.registry.set("wlBootReady", true);
     this.game.events.emit("wl-boot-ready");
+    // Evita spawn “fantasma” na loja após HMR / reload a meio do armário
+    if (!/[?&]equip=1/.test(q) && !/[?&]book=1/.test(q)) clearLobbyReturn();
 
     if (/[?&]skills=1/.test(q)) this.scene.start("SkillSelect");
     else if (/[?&]book=1/.test(q)) {

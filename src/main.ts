@@ -38,8 +38,9 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
+  // NONE no Boot: Scale.RESIZE no meio do load mata o loader (mago “congelado”)
   scale: {
-    mode: Phaser.Scale.RESIZE,
+    mode: Phaser.Scale.NONE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
     width: vp.width,
     height: vp.height
@@ -59,17 +60,16 @@ declare global {
 }
 window.__WL_GAME__ = game;
 
-/**
- * Resize só depois do Boot terminar.
- * Redimensionar durante o load trava o loader do Phaser (mago “congelado”).
- */
-let bootReady = false;
-game.events.once("wl-boot-ready", () => {
-  bootReady = true;
-});
+/** Phaser não deve ouvir resize até o Boot terminar. */
+try {
+  game.scale.stopListeners();
+} catch {
+  /* ignore */
+}
 
-window.addEventListener("resize", () => {
-  if (!bootReady) return;
+let bootReady = false;
+
+function applyLiveResize() {
   const { width, height } = viewport();
   if (
     Math.abs(width - game.scale.width) > 2 ||
@@ -77,15 +77,84 @@ window.addEventListener("resize", () => {
   ) {
     game.scale.resize(width, height);
   }
+  try {
+    game.loop.wake(true);
+  } catch {
+    /* ignore */
+  }
+}
+
+game.events.once("wl-boot-ready", () => {
+  bootReady = true;
+  try {
+    // Liga resize automático só depois dos assets
+    (game.scale as Phaser.Scale.ScaleManager).scaleMode = Phaser.Scale.RESIZE;
+    game.scale.startListeners();
+  } catch {
+    /* ignore */
+  }
+  applyLiveResize();
 });
 
-/** Se o Boot ficar preso no load (cena inativa), reinicia. */
+window.addEventListener("resize", () => {
+  if (!bootReady) return;
+  applyLiveResize();
+});
+
+const wakeLoop = () => {
+  try {
+    if (!game.loop.running) game.loop.start();
+    game.loop.wake(true);
+  } catch {
+    /* ignore */
+  }
+};
+window.addEventListener("focus", wakeLoop);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) wakeLoop();
+});
+
+/** Recupera loader morto (lista pendente sem download em voo). */
+function kickDeadLoader() {
+  const boot = game.scene.getScene("Boot") as Phaser.Scene | null;
+  const loader = boot?.load;
+  if (!loader || !loader.isLoading()) return false;
+  const listSize =
+    typeof (loader.list as { size?: number }).size === "number"
+      ? (loader.list as { size: number }).size
+      : 0;
+  const inflightSize =
+    typeof (loader.inflight as { size?: number }).size === "number"
+      ? (loader.inflight as { size: number }).size
+      : 0;
+  if (listSize > 0 && inflightSize === 0) {
+    console.warn("[WL] loader morto — retomando", listSize);
+    try {
+      loader.start();
+    } catch {
+      /* ignore */
+    }
+    return true;
+  }
+  return false;
+}
+
+const bootWatch = window.setInterval(() => {
+  if (bootReady) {
+    window.clearInterval(bootWatch);
+    return;
+  }
+  kickDeadLoader();
+}, 500);
+
+/** Se ainda preso após 5s, reinicia o Boot do zero. */
 window.setTimeout(() => {
   if (bootReady) return;
-  const boot = game.scene.getScene("Boot");
-  const loading = boot?.load?.isLoading?.();
-  if (loading || !game.scene.isActive("Lobby")) {
-    console.warn("[WL] Boot preso — reiniciando");
-    game.scene.start("Boot");
+  console.warn("[WL] Boot preso — reiniciando cena");
+  try {
+    game.scene.stop("Boot");
+  } catch {
+    /* ignore */
   }
-}, 4000);
+  game.scene.start("Boot");
+}, 5000);

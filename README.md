@@ -2,14 +2,18 @@
 
 Clone de gameplay inspirado em **Wizard Legend: Fighting Master** (descontinuado).
 
-## Como jogar
+## Jogar no celular / online
+
+Depois do deploy do GitHub Pages:
+
+**https://leoqoqwoq.github.io/wizard-legend/**
+
+## Como jogar local
 
 ```bash
 npm install
 npm run dev
 ```
-
-Abra **http://localhost:5174/**
 
 ### Controles
 - **Mobile / mouse:** arraste na parte de baixo da tela (joystick). Solte para atacar.
@@ -18,4 +22,4 @@ Abra **http://localhost:5174/**
 
 ## Stack
 - Phaser 4 + Vite + TypeScript
-- Sprites gerados por código (arte original)
+- Assets free (ver `public/assets/CREDITS.md`)

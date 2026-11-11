@@ -25,6 +25,14 @@ interface EnemyData {
   facing: Facing;
   /** Tocando attack/hurt — não sobrescrever com idle/move */
   busy: boolean;
+  isBoss?: boolean;
+  /** Alterna ring / laser no boss */
+  bossPhase?: number;
+}
+
+/** No WL original: boss a cada 10 andares (10, 20, 30…). */
+export function isBossFloor(floor: number) {
+  return floor > 0 && floor % 10 === 0;
 }
 
 const ENEMY_TEX: Record<EnemyType, string> = {
@@ -56,6 +64,9 @@ export class GameScene extends Phaser.Scene {
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private targetRing!: Phaser.GameObjects.Image;
   private facing: Facing = "down";
+  private bossHpGfx?: Phaser.GameObjects.Graphics;
+  private bossHpLabel?: Phaser.GameObjects.Text;
+  private laserGfx?: Phaser.GameObjects.Graphics;
 
   private readonly playerSpeed = 180;
 
@@ -133,7 +144,14 @@ export class GameScene extends Phaser.Scene {
       this.playerBullets,
       this.blocks,
       this.onPlayerBulletHitWall as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined,
+      (
+        bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+      ) => {
+        const bullet = bulletObj as Phaser.Physics.Arcade.Image;
+        const spawnAt = (bullet.getData("spawnAt") as number) || 0;
+        // Não processa colisão nos primeiros frames (hitbox/spawn)
+        return this.time.now - spawnAt >= 80;
+      },
       this
     );
     this.physics.add.overlap(
@@ -370,6 +388,12 @@ export class GameScene extends Phaser.Scene {
   private spawnEnemies() {
     const r = this.room;
     const floor = runState.floor;
+
+    if (isBossFloor(floor)) {
+      this.spawnBoss(floor);
+      return;
+    }
+
     const count = Math.min(2 + Math.floor(floor / 2), 7);
     // Ordem parecida com o vídeo: olho amarelo → slime verde → relógio → pipoca
     const kinds: EnemyType[] = ["eye", "bug", "bot", "pop"];
@@ -392,7 +416,49 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private createEnemy(kind: EnemyType, x: number, y: number, floor: number) {
+  private spawnBoss(floor: number) {
+    const r = this.room;
+    // Cicla visual entre bot/pop conforme o “capítulo” (10→bot, 20→pop, …)
+    const chapter = floor / 10;
+    const kind: EnemyType = chapter % 2 === 0 ? "pop" : "bot";
+    const boss = this.createEnemy(kind, r.centerX, r.y + 120, floor, true);
+    const data = boss.getData("data") as EnemyData;
+    const tier = chapter;
+    data.hp = data.maxHp = 28 + tier * 18;
+    data.speed = 22 + tier * 2;
+    data.damage = 1;
+    data.shootCd = Math.max(0.85, 1.6 - tier * 0.08);
+    data.shootTimer = 1.2;
+    data.isBoss = true;
+    data.bossPhase = 0;
+    boss.setScale(kind === "pop" ? 3.1 : 3.2);
+    boss.setTint(0xff9ff3);
+    boss.setDepth(12);
+    const shadow = boss.getData("shadow") as Phaser.GameObjects.Image;
+    shadow?.setScale(2.4).setAlpha(0.55);
+
+    this.bossHpGfx = this.add.graphics().setDepth(110).setScrollFactor(0);
+    this.bossHpLabel = this.add
+      .text(this.scale.width / 2, 52, `BOSS · FLOOR ${floor}`, {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "13px",
+        color: "#ffe6f7",
+        stroke: "#4a1040",
+        strokeThickness: 3
+      })
+      .setOrigin(0.5)
+      .setDepth(111)
+      .setScrollFactor(0);
+    this.laserGfx = this.add.graphics().setDepth(14);
+  }
+
+  private createEnemy(
+    kind: EnemyType,
+    x: number,
+    y: number,
+    floor: number,
+    isBoss = false
+  ) {
     const e = this.enemies.create(x, y, ENEMY_TEX[kind], 64) as Phaser.Physics.Arcade.Sprite;
     e.setDepth(8);
     e.setBounce(0.15);
@@ -404,6 +470,9 @@ export class GameScene extends Phaser.Scene {
     const bodyW = kind === "kernel" ? 16 : kind === "bot" ? 22 : 20;
     const bodyH = kind === "kernel" ? 16 : kind === "pop" ? 22 : 20;
     e.setSize(bodyW, bodyH).setOffset((48 - bodyW) / 2, (48 - bodyH) / 2 + 4);
+    if (isBoss) {
+      e.setSize(28, 30).setOffset(10, 12);
+    }
 
     const hp =
       (kind === "kernel" ? 1 : 2) +
@@ -427,7 +496,8 @@ export class GameScene extends Phaser.Scene {
       kind,
       frozen: 0,
       facing: "down",
-      busy: false
+      busy: false,
+      isBoss
     };
     e.setData("data", data);
 
@@ -490,16 +560,19 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(100);
 
+    const floorLabel = isBossFloor(runState.floor)
+      ? `BOSS ${runState.floor}`
+      : `FLOOR ${runState.floor}`;
     this.add
-      .text(width / 2, 28, `FLOOR ${runState.floor}`, {
+      .text(width / 2, 28, floorLabel, {
         fontFamily: "Arial Black, Arial",
         fontSize: "16px",
-        color: "#ffffff"
+        color: isBossFloor(runState.floor) ? "#ff9ff3" : "#ffffff"
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(100)
-      .setAlpha(0.7);
+      .setAlpha(0.85);
 
     this.hpContainer = this.add.container(0, 0).setDepth(100).setScrollFactor(0);
     this.refreshHpHud();
@@ -643,13 +716,17 @@ export class GameScene extends Phaser.Scene {
 
   private spawnPlayerBullet(angle: number, key: string) {
     const usePackBolt = key === "bullet_player";
+    // Nasce um pouco à frente pra não colidir no bloco sob o mago
+    const ox = this.player.x + Math.cos(angle) * 18;
+    const oy = this.player.y + Math.sin(angle) * 18;
     const b = this.playerBullets.get(
-      this.player.x,
-      this.player.y,
+      ox,
+      oy,
       usePackBolt ? "wizard" : key
-    ) as Phaser.Physics.Arcade.Image;
+    ) as Phaser.Physics.Arcade.Image | null;
     if (!b) return;
-    b.setActive(true).setVisible(true);
+
+    b.setActive(true).setVisible(true).setDepth(16).clearTint();
     if (usePackBolt) {
       b.setTexture("wizard", 68);
       b.setScale(1.6);
@@ -659,18 +736,26 @@ export class GameScene extends Phaser.Scene {
       b.setScale(1);
       b.setRotation(0);
     }
-    b.body.enable = true;
-    // Velocidade alta; some só na borda/bloco (não por timer curto)
+
+    // Hitbox pequena — o frame do pack é 48×48 e matava o tiro cedo nos blocos
+    const body = b.body as Phaser.Physics.Arcade.Body | null;
+    if (!body) return;
+    body.enable = true;
+    body.setSize(10, 10);
+    body.setOffset((b.width - 10) / 2, (b.height - 10) / 2);
+    body.setAllowGravity(false);
+
     const speed = 420;
-    this.physics.velocityFromRotation(angle, speed, b.body.velocity as Phaser.Math.Vector2);
+    this.physics.velocityFromRotation(angle, speed, body.velocity);
     b.setData("bounces", runState.skills.wall_bounce ?? 0);
     b.setData("rico", runState.skills.ricochet ?? 0);
     b.setData("dmg", 1);
+    b.setData("spawnAt", this.time.now);
   }
 
   /** Destrói tiro nas bordas da arena (paredes do mapa). */
   private cullPlayerBulletsAtWalls() {
-    const pad = 4;
+    const pad = 2;
     const r = this.room;
     this.playerBullets.getChildren().forEach((obj) => {
       const b = obj as Phaser.Physics.Arcade.Image;
@@ -689,7 +774,11 @@ export class GameScene extends Phaser.Scene {
   private killPlayerBullet(b: Phaser.Physics.Arcade.Image) {
     if (!b.active) return;
     this.playerBullets.killAndHide(b);
-    if (b.body) b.body.enable = false;
+    const body = b.body as Phaser.Physics.Arcade.Body | null;
+    if (body) {
+      body.enable = false;
+      body.stop();
+    }
   }
 
   private onPlayerBulletHitWall(
@@ -699,10 +788,13 @@ export class GameScene extends Phaser.Scene {
     const bullet = bulletObj as Phaser.Physics.Arcade.Image;
     if (!bullet.active) return;
 
+    // Ignora colisão logo no spawn (evita sumir no bloco ao lado do mago)
+    const spawnAt = (bullet.getData("spawnAt") as number) || 0;
+    if (this.time.now - spawnAt < 80) return;
+
     const bounces = (bullet.getData("bounces") as number) || 0;
     if (bounces > 0) {
       bullet.setData("bounces", bounces - 1);
-      // Quique real contra o bloco
       const body = bullet.body as Phaser.Physics.Arcade.Body;
       if (body.blocked.left || body.blocked.right) body.velocity.x *= -1;
       if (body.blocked.up || body.blocked.down) body.velocity.y *= -1;
@@ -739,11 +831,19 @@ export class GameScene extends Phaser.Scene {
         e.setVelocity(0, 0);
         return;
       }
-      e.clearTint();
+      if (data.isBoss) e.setTint(0xff9ff3);
+      else e.clearTint();
 
       // Perseguir / flanquear
       const angle = Phaser.Math.Angle.Between(e.x, e.y, this.player.x, this.player.y);
-      if (data.kind === "eye" || data.kind === "bug") {
+      if (data.isBoss) {
+        // Boss fica mais na metade de cima e orbita
+        this.physics.velocityFromRotation(
+          angle + Math.sin(this.time.now / 700) * 0.9,
+          data.speed,
+          e.body.velocity as Phaser.Math.Vector2
+        );
+      } else if (data.kind === "eye" || data.kind === "bug") {
         this.physics.velocityFromRotation(angle, data.speed, e.body.velocity as Phaser.Math.Vector2);
       } else {
         // bots/pop mais lentos, orbitam um pouco
@@ -756,7 +856,11 @@ export class GameScene extends Phaser.Scene {
 
       // Clamp
       e.x = Phaser.Math.Clamp(e.x, this.room.x + 16, this.room.right - 16);
-      e.y = Phaser.Math.Clamp(e.y, this.room.y + 20, this.room.bottom - 20);
+      e.y = Phaser.Math.Clamp(
+        e.y,
+        this.room.y + 20,
+        data.isBoss ? this.room.centerY + 40 : this.room.bottom - 20
+      );
 
       const shadow = e.getData("shadow") as Phaser.GameObjects.Image;
       if (shadow) shadow.setPosition(e.x, e.y + 22);
@@ -774,15 +878,107 @@ export class GameScene extends Phaser.Scene {
 
       // Atirar com preset Attack
       data.shootTimer -= dt;
-      if (
-        data.shootTimer <= 0 &&
-        !data.busy &&
-        data.kind !== "bug" &&
-        data.kind !== "kernel"
-      ) {
-        data.shootTimer = data.shootCd;
-        this.enemyShoot(e, angle);
+      if (data.shootTimer <= 0 && !data.busy) {
+        if (data.isBoss) {
+          data.shootTimer = data.shootCd;
+          data.bossPhase = (data.bossPhase ?? 0) + 1;
+          if ((data.bossPhase ?? 0) % 3 === 0) this.bossLaser(e);
+          else this.bossRingShot(e, angle);
+        } else if (data.kind !== "bug" && data.kind !== "kernel") {
+          data.shootTimer = data.shootCd;
+          this.enemyShoot(e, angle);
+        }
       }
+    });
+  }
+
+  private bossRingShot(e: Phaser.Physics.Arcade.Sprite, angle: number) {
+    const data = e.getData("data") as EnemyData;
+    data.facing = facingFromVector(Math.cos(angle), Math.sin(angle), data.facing);
+    data.busy = true;
+    e.play(enemyAnimKey(data.kind, "attack", data.facing), true);
+
+    const count = 8 + Math.floor(runState.floor / 20);
+    for (let i = 0; i < count; i++) {
+      const a = angle + (i / count) * Math.PI * 2;
+      const b = this.enemyBullets.get(e.x, e.y, "bullet_ring") as Phaser.Physics.Arcade.Image;
+      if (!b) continue;
+      b.setActive(true).setVisible(true);
+      b.setTexture("bullet_ring");
+      b.setTint(0xff9ff3);
+      b.body.enable = true;
+      this.physics.velocityFromRotation(
+        a,
+        110 + runState.floor * 3,
+        b.body.velocity as Phaser.Math.Vector2
+      );
+      this.time.delayedCall(2800, () => {
+        if (b.active) {
+          b.clearTint();
+          this.enemyBullets.killAndHide(b);
+        }
+      });
+    }
+  }
+
+  /** Telegráfo rosa + rajada em linha (estilo laser do WL). */
+  private bossLaser(e: Phaser.Physics.Arcade.Sprite) {
+    const data = e.getData("data") as EnemyData;
+    const angle = Phaser.Math.Angle.Between(e.x, e.y, this.player.x, this.player.y);
+    data.facing = facingFromVector(Math.cos(angle), Math.sin(angle), data.facing);
+    data.busy = true;
+    e.play(enemyAnimKey(data.kind, "attack", data.facing), true);
+
+    const gfx = this.laserGfx;
+    const len = 420;
+    const x2 = e.x + Math.cos(angle) * len;
+    const y2 = e.y + Math.sin(angle) * len;
+
+    // Aviso
+    gfx?.clear();
+    gfx?.lineStyle(3, 0xff9ff3, 0.45);
+    gfx?.lineBetween(e.x, e.y, x2, y2);
+
+    this.time.delayedCall(450, () => {
+      if (!e.active) {
+        gfx?.clear();
+        return;
+      }
+      gfx?.clear();
+      gfx?.lineStyle(6, 0xff6bcb, 0.95);
+      gfx?.lineBetween(e.x, e.y, x2, y2);
+
+      // Projéteis rápidos ao longo do raio
+      for (let i = 0; i < 5; i++) {
+        this.time.delayedCall(i * 40, () => {
+          if (!e.active) return;
+          const b = this.enemyBullets.get(
+            e.x,
+            e.y,
+            "bullet_ring"
+          ) as Phaser.Physics.Arcade.Image;
+          if (!b) return;
+          b.setActive(true).setVisible(true);
+          b.setTexture("bullet_ring");
+          b.setTint(0xff6bcb);
+          b.setScale(1.35);
+          b.body.enable = true;
+          this.physics.velocityFromRotation(
+            angle,
+            280 + runState.floor * 4,
+            b.body.velocity as Phaser.Math.Vector2
+          );
+          this.time.delayedCall(1600, () => {
+            if (b.active) {
+              b.clearTint();
+              b.setScale(1);
+              this.enemyBullets.killAndHide(b);
+            }
+          });
+        });
+      }
+
+      this.time.delayedCall(180, () => gfx?.clear());
     });
   }
 
@@ -823,32 +1019,65 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnPlayerBulletFrom(x: number, y: number, angle: number, key: string) {
-    const b = this.playerBullets.get(x, y, key) as Phaser.Physics.Arcade.Image;
+    const b = this.playerBullets.get(x, y, key) as Phaser.Physics.Arcade.Image | null;
     if (!b) return;
-    b.setActive(true).setVisible(true);
-    b.body.enable = true;
-    this.physics.velocityFromRotation(angle, 400, b.body.velocity as Phaser.Math.Vector2);
+    b.setActive(true).setVisible(true).setDepth(16).clearTint();
+    b.setTexture(key);
+    b.setScale(1);
+    b.setRotation(0);
+    const body = b.body as Phaser.Physics.Arcade.Body | null;
+    if (!body) return;
+    body.enable = true;
+    body.setSize(10, 10);
+    body.setOffset((b.width - 10) / 2, (b.height - 10) / 2);
+    this.physics.velocityFromRotation(angle, 400, body.velocity);
     b.setData("dmg", 1);
     b.setData("bounces", 0);
     b.setData("rico", 0);
+    b.setData("spawnAt", this.time.now);
   }
 
   private updateEnemyHpBars() {
-    this.enemies.getChildren().forEach((obj) => {
-      const e = obj as Phaser.Physics.Arcade.Sprite;
-      const bar = e.getData("hpBar") as Phaser.GameObjects.Graphics;
-      const data = e.getData("data") as EnemyData;
-      if (!bar || !e.active) {
+    const kids = this.enemies.getChildren() as Phaser.Physics.Arcade.Sprite[];
+    let bossHp = 0;
+    let bossMax = 0;
+    let hasBoss = false;
+
+    for (const e of kids) {
+      const bar = e.getData("hpBar") as Phaser.GameObjects.Graphics | undefined;
+      const data = e.getData("data") as EnemyData | undefined;
+      if (!bar || !e.active || !data) {
         bar?.clear();
-        return;
+        continue;
       }
       bar.clear();
+      if (data.isBoss) {
+        hasBoss = true;
+        bossHp = data.hp;
+        bossMax = data.maxHp;
+        continue;
+      }
       const w = 28;
       bar.fillStyle(0x000000, 0.5);
       bar.fillRect(e.x - w / 2, e.y - 24, w, 5);
       bar.fillStyle(0xe74c3c, 1);
       bar.fillRect(e.x - w / 2, e.y - 24, w * (data.hp / data.maxHp), 5);
-    });
+    }
+
+    if (this.bossHpGfx) {
+      this.bossHpGfx.clear();
+      if (hasBoss && bossMax > 0) {
+        const { width } = this.scale;
+        const barW = Math.min(280, width - 48);
+        const x = (width - barW) / 2;
+        const y = 62;
+        const ratio = Math.max(0, bossHp / bossMax);
+        this.bossHpGfx.fillStyle(0x2a1024, 0.85);
+        this.bossHpGfx.fillRect(x - 2, y - 2, barW + 4, 14);
+        this.bossHpGfx.fillStyle(0xff6bcb, 1);
+        this.bossHpGfx.fillRect(x, y, barW * ratio, 10);
+      }
+    }
   }
 
   private onPlayerHitEnemy(
@@ -899,29 +1128,38 @@ export class GameScene extends Phaser.Scene {
     this.showDamage(enemy.x, enemy.y - 20, dmg);
 
     if (data.hp <= 0) {
+      const wasBoss = !!data.isBoss;
       const bar = enemy.getData("hpBar") as Phaser.GameObjects.Graphics;
       bar?.destroy();
       const shadow = enemy.getData("shadow") as Phaser.GameObjects.Image;
       shadow?.destroy();
-      const splash = this.add.circle(enemy.x, enemy.y + 10, 10, 0xe67e22, 0.7).setDepth(3);
+      const splash = this.add
+        .circle(enemy.x, enemy.y + 10, wasBoss ? 22 : 10, wasBoss ? 0xff6bcb : 0xe67e22, 0.7)
+        .setDepth(3);
       this.tweens.add({
         targets: splash,
         alpha: 0,
-        scale: 1.8,
+        scale: wasBoss ? 2.6 : 1.8,
         duration: 500,
         onComplete: () => splash.destroy()
       });
       enemy.destroy();
-      runState.coins += 1;
+      runState.coins += wasBoss ? 12 + runState.floor : 1;
       this.coinText.setText(String(runState.coins));
-      for (let i = 0; i < 6; i++) {
-        const p = this.add.circle(enemy.x, enemy.y, 3, 0xf1c40f);
+      if (wasBoss) {
+        this.bossHpGfx?.clear();
+        this.bossHpLabel?.destroy();
+        this.bossHpLabel = undefined;
+        this.laserGfx?.clear();
+      }
+      for (let i = 0; i < (wasBoss ? 14 : 6); i++) {
+        const p = this.add.circle(enemy.x, enemy.y, wasBoss ? 4 : 3, wasBoss ? 0xff9ff3 : 0xf1c40f);
         this.tweens.add({
           targets: p,
-          x: enemy.x + Phaser.Math.Between(-40, 40),
-          y: enemy.y + Phaser.Math.Between(-40, 40),
+          x: enemy.x + Phaser.Math.Between(-50, 50),
+          y: enemy.y + Phaser.Math.Between(-50, 50),
           alpha: 0,
-          duration: 400,
+          duration: 450,
           onComplete: () => p.destroy()
         });
       }
@@ -931,7 +1169,10 @@ export class GameScene extends Phaser.Scene {
       enemy.play(enemyAnimKey(data.kind, "hurt", data.facing), true);
       enemy.setTint(0xffaaaa);
       this.time.delayedCall(120, () => {
-        if (enemy.active) enemy.clearTint();
+        if (enemy.active) {
+          if (data.isBoss) enemy.setTint(0xff9ff3);
+          else enemy.clearTint();
+        }
       });
     }
   }

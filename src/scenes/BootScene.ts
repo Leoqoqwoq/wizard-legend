@@ -7,6 +7,7 @@ import {
 } from "../game/createAnims";
 import { uiSel } from "../game/equipUi";
 import { tuneWizardAnimRates } from "../game/playerMotion";
+import { runState } from "../game/RunState";
 
 /** Respeita base do Vite (ex.: /wizard-legend/ no GitHub Pages). */
 function asset(path: string) {
@@ -68,12 +69,16 @@ export class BootScene extends Phaser.Scene {
       "btn_blue",
       "btn_brown",
       "book",
-      "book_mini",
-      "book_strip"
+      "book_mini"
     ];
     for (const u of ui) {
       this.load.image(`ui_${u}`, asset(`assets/ui/${u}.png`));
     }
+    // Faixa de 4 frames (fechado → aberto), 160×90 cada
+    this.load.spritesheet("ui_book_strip", asset("assets/ui/book_strip.png"), {
+      frameWidth: 160,
+      frameHeight: 90
+    });
     for (let i = 0; i <= 11; i++) {
       this.load.image(`ui_skill_${i}`, asset(`assets/ui/skills/skill_${i}.png`));
     }
@@ -152,14 +157,29 @@ export class BootScene extends Phaser.Scene {
         repeat: -1
       });
     }
+    if (!this.anims.exists("book-open")) {
+      this.anims.create({
+        key: "book-open",
+        frames: this.anims.generateFrameNumbers("ui_book_strip", {
+          start: 0,
+          end: 3
+        }),
+        frameRate: 12,
+        repeat: 0
+      });
+    }
 
     const q = typeof location !== "undefined" ? location.search : "";
+    const floorMatch = q.match(/[?&]floor=(\d+)/);
+    if (floorMatch) {
+      runState.floor = Math.max(1, Number(floorMatch[1]) || 1);
+    }
     if (/[?&]skills=1/.test(q)) this.scene.start("SkillSelect");
     else if (/[?&]book=1/.test(q)) {
       uiSel.tab = "book";
       this.scene.start("Equip");
     } else if (/[?&]equip=1/.test(q)) this.scene.start("Equip");
-    else if (/[?&]game=1/.test(q)) this.scene.start("Game");
+    else if (/[?&]game=1/.test(q) || floorMatch) this.scene.start("Game");
     else this.scene.start("Lobby");
   }
 }

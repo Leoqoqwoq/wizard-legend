@@ -10,6 +10,7 @@ import {
 
 export class SkillSelectScene extends Phaser.Scene {
   private choices: SkillId[] = [];
+  private cardsRoot?: Phaser.GameObjects.Container;
 
   constructor() {
     super("SkillSelect");
@@ -22,15 +23,14 @@ export class SkillSelectScene extends Phaser.Scene {
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x1a1028, 0.94);
 
-    this.drawSkillBook(width / 2, 155);
+    this.drawSkillBook(width / 2, 168);
 
-    // Banner Choose one
     const banner = this.add
-      .image(width / 2, 285, "ui_btn_blue")
+      .image(width / 2, 300, "ui_btn_blue")
       .setDisplaySize(200, 40)
       .setDepth(5);
     this.add
-      .text(width / 2, 285, "Choose one", {
+      .text(width / 2, 300, "Choose one", {
         fontFamily: "Arial Black, Arial",
         fontSize: "18px",
         color: "#ffffff",
@@ -41,11 +41,8 @@ export class SkillSelectScene extends Phaser.Scene {
       .setDepth(6);
     void banner;
 
-    // Cartas (Kenney panels + Critters icons)
-    const startX = width / 2 - 112;
-    this.choices.forEach((id, i) => {
-      this.createCard(startX + i * 112, 430, id, i);
-    });
+    this.cardsRoot = this.add.container(0, 0).setDepth(8);
+    this.renderCards();
 
     const giveCoins = 5 + runState.floor * 2;
     this.makeButton(width / 2, height - 70, 230, 46, "ui_btn_brown", `Give up +${giveCoins} Coins`, () => {
@@ -54,7 +51,31 @@ export class SkillSelectScene extends Phaser.Scene {
     });
 
     this.makeButton(width / 2, height - 130, 170, 42, "ui_btn", "↻ Refresh", () => {
-      this.scene.restart();
+      this.choices = randomSkillChoices(runState.skills, 3, bias);
+      this.renderCards();
+    });
+  }
+
+  private renderCards() {
+    this.cardsRoot?.removeAll(true);
+    const { width } = this.scale;
+
+    if (this.choices.length === 0) {
+      this.cardsRoot?.add(
+        this.add
+          .text(width / 2, 430, "Skills no máximo", {
+            fontFamily: "Arial Black, Arial",
+            fontSize: "16px",
+            color: "#f5e6ff"
+          })
+          .setOrigin(0.5)
+      );
+      return;
+    }
+
+    const startX = width / 2 - (this.choices.length - 1) * 56;
+    this.choices.forEach((id, i) => {
+      this.createCard(startX + i * 112, 430, id, i);
     });
   }
 
@@ -88,117 +109,130 @@ export class SkillSelectScene extends Phaser.Scene {
   }
 
   private drawSkillBook(x: number, y: number) {
-    // Duas páginas (painéis Kenney) + faixa Critters
-    this.add
-      .image(x - 82, y, "ui_panel_card")
-      .setDisplaySize(160, 175)
-      .setDepth(2);
-    this.add
-      .image(x + 82, y, "ui_panel_card_alt")
-      .setDisplaySize(160, 175)
-      .setDepth(2);
+    // Livro real (Critters) em vez de dois painéis + faixa esticada errada
+    const bookBg = this.add
+      .image(x, y, "ui_book")
+      .setDisplaySize(340, 192)
+      .setDepth(2)
+      .setAlpha(0);
 
-    this.add
-      .image(x, y - 92, "ui_book_strip")
-      .setDisplaySize(310, 30)
+    const opener = this.add
+      .sprite(x, y, "ui_book_strip", 0)
+      .setDisplaySize(200, 112)
       .setDepth(3);
 
     this.add
-      .text(x, y - 92, "Skill Book", {
+      .text(x, y - 112, "Skill Book", {
         fontFamily: "Arial Black, Arial",
-        fontSize: "14px",
-        color: "#4a3020"
+        fontSize: "16px",
+        color: "#f5e6ff",
+        stroke: "#1a1028",
+        strokeThickness: 4
       })
       .setOrigin(0.5)
       .setDepth(4);
 
+    const slots = this.add.container(0, 0).setDepth(5).setAlpha(0);
     const ids = Object.keys(runState.skills) as SkillId[];
+
     for (let i = 0; i < 8; i++) {
       const col = i % 4;
       const row = Math.floor(i / 4);
       const page = col < 2 ? -1 : 1;
       const localCol = col % 2;
-      const sx = x + page * 82 + (localCol - 0.5) * 56;
-      const sy = y - 32 + row * 56;
+      // Páginas do ui_book: centro da lombada em x, páginas ~±70
+      const sx = x + page * 78 + (localCol - 0.5) * 52;
+      const sy = y - 18 + row * 52;
 
       const ownedId = ids[i];
-      this.add
-        .image(sx, sy, ownedId ? "ui_slot_filled" : "ui_slot")
-        .setDisplaySize(46, 46)
-        .setDepth(4);
+      slots.add(
+        this.add
+          .image(sx, sy, ownedId ? "ui_slot_filled" : "ui_slot")
+          .setDisplaySize(44, 44)
+      );
 
       if (ownedId) {
         const def = SKILLS[ownedId];
-        this.add
-          .image(sx, sy - 2, skillIconKey(def))
-          .setDisplaySize(28, 28)
-          .setDepth(5);
+        slots.add(
+          this.add.image(sx, sy - 2, skillIconKey(def)).setDisplaySize(26, 26)
+        );
         const stacks = runState.skills[ownedId] ?? 1;
-        this.add
-          .text(sx + 14, sy + 14, String(stacks), {
-            fontFamily: "Arial Black, Arial",
-            fontSize: "12px",
-            color: "#fff",
-            stroke: "#000",
-            strokeThickness: 3
-          })
-          .setOrigin(0.5)
-          .setDepth(6);
+        slots.add(
+          this.add
+            .text(sx + 13, sy + 13, String(stacks), {
+              fontFamily: "Arial Black, Arial",
+              fontSize: "11px",
+              color: "#fff",
+              stroke: "#000",
+              strokeThickness: 3
+            })
+            .setOrigin(0.5)
+        );
       }
     }
+
+    opener.play("book-open");
+    opener.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      this.tweens.add({
+        targets: opener,
+        alpha: 0,
+        duration: 160,
+        onComplete: () => opener.destroy()
+      });
+      this.tweens.add({
+        targets: [bookBg, slots],
+        alpha: 1,
+        duration: 180
+      });
+    });
   }
 
   private createCard(x: number, y: number, id: SkillId, index: number) {
     const def = SKILLS[id];
     const panelKey = index % 2 === 0 ? "ui_panel_card" : "ui_panel_card_alt";
+    const root = this.cardsRoot!;
 
     const card = this.add
       .image(x, y, panelKey)
       .setDisplaySize(100, 148)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(8);
+      .setInteractive({ useHandCursor: true });
 
-    this.add
-      .image(x, y - 28, "ui_slot")
-      .setDisplaySize(52, 52)
-      .setDepth(9);
-
-    this.add
-      .image(x, y - 28, skillIconKey(def))
-      .setDisplaySize(36, 36)
-      .setDepth(10);
-
-    this.add
-      .text(x, y - 68, def.name, {
-        fontFamily: "Arial Black, Arial",
-        fontSize: "11px",
-        color: "#3b2414",
-        align: "center",
-        wordWrap: { width: 88 }
-      })
-      .setOrigin(0.5)
-      .setDepth(10);
-
-    this.add
-      .text(x, y + 28, def.description, {
-        fontFamily: "Arial",
-        fontSize: "10px",
-        color: "#2c1a0a",
-        align: "center",
-        wordWrap: { width: 84 }
-      })
-      .setOrigin(0.5)
-      .setDepth(10);
+    root.add(card);
+    root.add(this.add.image(x, y - 28, "ui_slot").setDisplaySize(52, 52));
+    root.add(this.add.image(x, y - 28, skillIconKey(def)).setDisplaySize(36, 36));
+    root.add(
+      this.add
+        .text(x, y - 68, def.name, {
+          fontFamily: "Arial Black, Arial",
+          fontSize: "11px",
+          color: "#3b2414",
+          align: "center",
+          wordWrap: { width: 88 }
+        })
+        .setOrigin(0.5)
+    );
+    root.add(
+      this.add
+        .text(x, y + 28, def.description, {
+          fontFamily: "Arial",
+          fontSize: "10px",
+          color: "#2c1a0a",
+          align: "center",
+          wordWrap: { width: 84 }
+        })
+        .setOrigin(0.5)
+    );
 
     const stacks = runState.skills[id] ?? 0;
-    this.add
-      .text(x, y + 58, `Lv ${stacks + 1}`, {
-        fontFamily: "Arial Black, Arial",
-        fontSize: "12px",
-        color: "#6b3a1f"
-      })
-      .setOrigin(0.5)
-      .setDepth(10);
+    root.add(
+      this.add
+        .text(x, y + 58, `Lv ${stacks + 1}`, {
+          fontFamily: "Arial Black, Arial",
+          fontSize: "12px",
+          color: "#6b3a1f"
+        })
+        .setOrigin(0.5)
+    );
 
     card.on("pointerover", () => {
       card.setTint(0xfff0c8);

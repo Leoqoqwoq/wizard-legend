@@ -305,5 +305,5 @@ export function capeIconKey(id: CapeId) {
 }
 
 export function bookIconKey(id: BookId) {
-  return id === "none" ? "ui_book" : `icon_book_${id}`;
+  return id === "none" ? "ui_book_mini" : `icon_book_${id}`;
 }

@@ -8,19 +8,25 @@ import {
 import { uiSel } from "../game/equipUi";
 import { tuneWizardAnimRates } from "../game/playerMotion";
 
+/** Respeita base do Vite (ex.: /wizard-legend/ no GitHub Pages). */
+function asset(path: string) {
+  const base = import.meta.env.BASE_URL || "/";
+  return `${base}${path.replace(/^\//, "")}`;
+}
+
 export class BootScene extends Phaser.Scene {
   constructor() {
     super("Boot");
   }
 
   preload() {
-    this.load.spritesheet("wizard", "/assets/wizard_sheet.png", {
+    this.load.spritesheet("wizard", asset("assets/wizard_sheet.png"), {
       frameWidth: 48,
       frameHeight: 48
     });
 
     for (const kind of ENEMY_KINDS) {
-      this.load.spritesheet(`enemy_${kind}`, `/assets/enemies/${kind}.png`, {
+      this.load.spritesheet(`enemy_${kind}`, asset(`assets/enemies/${kind}.png`), {
         frameWidth: 48,
         frameHeight: 48
       });
@@ -49,7 +55,7 @@ export class BootScene extends Phaser.Scene {
       "wall_flag_blue"
     ];
     for (const t of tiles) {
-      this.load.image(`tile_${t}`, `/assets/tiles/${t}.png`);
+      this.load.image(`tile_${t}`, asset(`assets/tiles/${t}.png`));
     }
 
     const ui = [
@@ -66,36 +72,36 @@ export class BootScene extends Phaser.Scene {
       "book_strip"
     ];
     for (const u of ui) {
-      this.load.image(`ui_${u}`, `/assets/ui/${u}.png`);
+      this.load.image(`ui_${u}`, asset(`assets/ui/${u}.png`));
     }
     for (let i = 0; i <= 11; i++) {
-      this.load.image(`ui_skill_${i}`, `/assets/ui/skills/skill_${i}.png`);
+      this.load.image(`ui_skill_${i}`, asset(`assets/ui/skills/skill_${i}.png`));
     }
 
     // Lobby / merchant
-    this.load.spritesheet("lobby_shopkeeper", "/assets/lobby/shopkeeper.png", {
+    this.load.spritesheet("lobby_shopkeeper", asset("assets/lobby/shopkeeper.png"), {
       frameWidth: 48,
       frameHeight: 48
     });
-    this.load.image("lobby_table", "/assets/lobby/table.png");
-    this.load.image("lobby_shelf", "/assets/lobby/shelf.png");
-    this.load.image("lobby_stand", "/assets/lobby/stand.png");
-    this.load.image("lobby_floor_bg", "/assets/lobby/floor_bg.png");
-    this.load.image("lobby_wall_bg", "/assets/lobby/wall_bg.png");
+    this.load.image("lobby_table", asset("assets/lobby/table.png"));
+    this.load.image("lobby_shelf", asset("assets/lobby/shelf.png"));
+    this.load.image("lobby_stand", asset("assets/lobby/stand.png"));
+    this.load.image("lobby_floor_bg", asset("assets/lobby/floor_bg.png"));
+    this.load.image("lobby_wall_bg", asset("assets/lobby/wall_bg.png"));
 
     // Gemas / moedas (OpenGameArt CC0)
-    this.load.image("gem", "/assets/gems/gem_green.png");
-    this.load.image("gem_blue", "/assets/gems/gem_blue.png");
-    this.load.image("gem_red", "/assets/gems/gem_red.png");
-    this.load.image("gem_violet", "/assets/gems/gem_violet.png");
-    this.load.image("gem_yellow", "/assets/gems/gem_yellow.png");
-    this.load.image("gem_diamond", "/assets/gems/gem_diamond.png");
-    this.load.image("gem_ruby", "/assets/gems/gem_ruby.png");
-    this.load.spritesheet("gem_spin", "/assets/gems/gem_spin_sheet.png", {
+    this.load.image("gem", asset("assets/gems/gem_green.png"));
+    this.load.image("gem_blue", asset("assets/gems/gem_blue.png"));
+    this.load.image("gem_red", asset("assets/gems/gem_red.png"));
+    this.load.image("gem_violet", asset("assets/gems/gem_violet.png"));
+    this.load.image("gem_yellow", asset("assets/gems/gem_yellow.png"));
+    this.load.image("gem_diamond", asset("assets/gems/gem_diamond.png"));
+    this.load.image("gem_ruby", asset("assets/gems/gem_ruby.png"));
+    this.load.spritesheet("gem_spin", asset("assets/gems/gem_spin_sheet.png"), {
       frameWidth: 8,
       frameHeight: 8
     });
-    this.load.spritesheet("coin_spin", "/assets/gems/coin_spin_sheet.png", {
+    this.load.spritesheet("coin_spin", asset("assets/gems/coin_spin_sheet.png"), {
       frameWidth: 8,
       frameHeight: 8
     });
@@ -114,7 +120,7 @@ export class BootScene extends Phaser.Scene {
       "loop"
     ];
     for (const icon of lobbyIcons) {
-      this.load.image(`icon_${icon}`, `/assets/icons/lobby/${icon}.png`);
+      this.load.image(`icon_${icon}`, asset(`assets/icons/lobby/${icon}.png`));
     }
   }
 

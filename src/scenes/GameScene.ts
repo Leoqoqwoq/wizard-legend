@@ -22,6 +22,7 @@ import {
   kingdomForFloor,
   type KingdomEnemySlot
 } from "../game/kingdoms";
+import { buildArenaVisual, layoutObstacles } from "../game/arenaMap";
 import { followBrowserFrame } from "../game/followBrowser";
 
 type EnemyType = EnemyKind;
@@ -231,134 +232,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawArena() {
-    const g = this.add.graphics().setDepth(0);
-    const r = this.room;
-    const TS = 32; // tile 16px × scale 2
-
-    // Void fora da sala
-    g.fillStyle(0x0d0818, 1);
-    g.fillRect(0, 0, this.scale.width, this.scale.height);
-
-    // Chão tiled (0x72 dungeon)
-    const floors = ["tile_floor_plain", "tile_floor_light", "tile_floor_edge_1", "tile_floor_edge_2"];
-    for (let y = r.y; y < r.bottom; y += TS) {
-      for (let x = r.x; x < r.right; x += TS) {
-        const cx = Math.floor((x - r.x) / TS);
-        const cy = Math.floor((y - r.y) / TS);
-        const key =
-          floors[(cx * 3 + cy * 5 + runState.floor) % floors.length] ?? floors[0];
-        this.add
-          .image(x + TS / 2, y + TS / 2, key)
-          .setDisplaySize(TS, TS)
-          .setDepth(0);
-      }
-    }
-
-    // Paredes / moldura com tiles
-    const wallY = r.y - TS / 2;
-    for (let x = r.x; x < r.right; x += TS) {
-      const isLeft = x <= r.x;
-      const isRight = x + TS >= r.right;
-      const key = isLeft
-        ? "tile_Wall_front_left"
-        : isRight
-          ? "tile_Wall_front_right"
-          : "tile_Wall_front";
-      this.add
-        .image(x + TS / 2, wallY, key)
-        .setDisplaySize(TS, TS)
-        .setDepth(2);
-    }
-    // laterais
-    for (let y = r.y; y < r.bottom; y += TS) {
-      this.add
-        .image(r.x - TS / 2, y + TS / 2, "tile_wall_center")
-        .setDisplaySize(TS, TS)
-        .setDepth(2);
-      this.add
-        .image(r.right + TS / 2, y + TS / 2, "tile_Wall_inner_e")
-        .setDisplaySize(TS, TS)
-        .setDepth(2);
-    }
-    // base
-    for (let x = r.x; x < r.right; x += TS) {
-      this.add
-        .image(x + TS / 2, r.bottom + TS / 2, "tile_wall_center")
-        .setDisplaySize(TS, TS)
-        .setDepth(2);
-    }
-
-    // Detalhes: bandeiras no topo
-    this.add
-      .image(r.x + 48, wallY - 8, "tile_wall_flag_red")
-      .setDisplaySize(TS, TS)
-      .setDepth(3);
-    this.add
-      .image(r.right - 48, wallY - 8, "tile_wall_flag_blue")
-      .setDisplaySize(TS, TS)
-      .setDepth(3);
-
-    // Texto do floor / reino no chão
-    const endless = runState.mode === "endless";
-    const kingdom = kingdomForFloor(runState.floor, endless);
-    const floorLabel = isUltraBossFloor(runState.floor)
-      ? "ULTRA"
-      : `${runState.floor}`;
-    this.add
-      .text(r.centerX, r.centerY + 24, floorLabel, {
-        fontFamily: "Arial Black, Arial",
-        fontSize: "42px",
-        color: "#ffffff",
-        stroke: "#000000",
-        strokeThickness: 2
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.18)
-      .setDepth(1);
-    this.add
-      .text(
-        r.centerX,
-        r.centerY + 58,
-        isUltraBossFloor(runState.floor)
-          ? ULTRA_BOSS.kingdomName
-          : endless
-            ? `${kingdom.name} · ∞`
-            : kingdom.name,
-        {
-          fontFamily: "Arial Black, Arial",
-          fontSize: "16px",
-          color: "#ffffff"
-        }
-      )
-      .setOrigin(0.5)
-      .setAlpha(0.22)
-      .setDepth(1)
-      .setTint(isUltraBossFloor(runState.floor) ? ULTRA_BOSS.accent : kingdom.accent);
+    buildArenaVisual(
+      this,
+      this.room,
+      runState.floor,
+      runState.mode === "endless"
+    );
   }
 
   private spawnBlocks() {
-    const r = this.room;
-    const layout = [
-      [r.x + 72, r.y + 80],
-      [r.right - 72, r.y + 80],
-      [r.x + 72, r.bottom - 96],
-      [r.right - 72, r.bottom - 96]
-    ];
-    if (runState.floor % 2 === 0) {
-      layout.push([r.centerX, r.centerY]);
-    }
-    layout.forEach(([x, y], i) => {
-      // Coluna decorativa + caixa como colisão sólida
-      this.add
-        .image(x, y - 28, "tile_column")
-        .setDisplaySize(36, 96)
-        .setDepth(4);
-      const key = i % 3 === 0 ? "tile_boxes_stacked" : "tile_box";
-      const b = this.blocks.create(x, y + 8, key) as Phaser.Physics.Arcade.Sprite;
-      b.setDisplaySize(36, 36);
-      b.refreshBody();
-      b.setDepth(5);
-    });
+    layoutObstacles(
+      this,
+      this.blocks,
+      this.room,
+      runState.floor,
+      runState.mode
+    );
   }
 
   private spawnPlayer() {

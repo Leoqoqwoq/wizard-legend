@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Firebase / secrets (Vite)
+.env
+.env.local
+.env.*.local
+
 # Temp downloads / scrapes
 tmp_*/
 tmp_*

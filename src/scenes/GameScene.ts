@@ -1,6 +1,11 @@
 import Phaser from "phaser";
 import { Joystick } from "../game/Joystick";
-import { CAPES, metaState } from "../game/MetaState";
+import {
+  CAPES,
+  bankRunRewards,
+  metaState,
+  recordBestFloor
+} from "../game/MetaState";
 import {
   runState,
   resetRun,
@@ -1374,11 +1379,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private recordProgress() {
-    if (runState.mode === "endless") {
-      if (runState.floor > metaState.bestFloor) metaState.bestFloor = runState.floor;
-    } else if (runState.floor > metaState.bestCampaignFloor) {
-      metaState.bestCampaignFloor = runState.floor;
-    }
+    recordBestFloor(runState.floor, runState.mode);
   }
 
   private togglePause() {
@@ -1461,8 +1462,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.pause();
     runState.campaignWon = true;
     this.recordProgress();
-    metaState.gems += 80 + Math.floor(runState.coins / 2);
-    metaState.coinsBank += runState.coins;
+    bankRunRewards(80 + Math.floor(runState.coins / 2), runState.coins);
 
     const { width, height } = this.scale;
     this.add.rectangle(width / 2, height / 2, width, height, 0x1a1028, 0.82).setDepth(200);
@@ -1553,8 +1553,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(201);
 
     this.recordProgress();
-    metaState.gems += Math.floor(runState.coins / 3);
-    metaState.coinsBank += runState.coins;
+    bankRunRewards(Math.floor(runState.coins / 3), runState.coins);
 
     const mode = runState.mode;
     const retry = this.add

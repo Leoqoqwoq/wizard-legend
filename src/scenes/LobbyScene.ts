@@ -1,4 +1,10 @@
 import Phaser from "phaser";
+import {
+  accountLabel,
+  closeAccountPanel,
+  openAccountPanel
+} from "../game/accountPanel";
+import { getAccountInfo, isFirebaseConfigured } from "../game/cloudSave";
 import { Joystick } from "../game/Joystick";
 import { playerAnimKey, type Facing } from "../game/createAnims";
 import {
@@ -36,6 +42,8 @@ export class LobbyScene extends Phaser.Scene {
   /** Evita reabrir armário/porta no mesmo frame do spawn. */
   private interactLock = 0;
   private readonly speed = 160;
+  private accountBtnLabel!: Phaser.GameObjects.Text;
+  private accountOpen = false;
 
   constructor() {
     super("Lobby");
@@ -49,6 +57,8 @@ export class LobbyScene extends Phaser.Scene {
     this.adWatching = false;
     this.battleHold = 0;
     this.interactLock = 0.75;
+    this.accountOpen = false;
+    closeAccountPanel();
 
     this.drawRoom();
     this.spawnDecor();
@@ -56,6 +66,10 @@ export class LobbyScene extends Phaser.Scene {
     this.spawnPlayer();
     this.buildHud();
     this.buildBottomNav();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      closeAccountPanel();
+      this.accountOpen = false;
+    });
 
     this.joystick = new Joystick(this);
     followBrowserFrame(
@@ -344,6 +358,22 @@ export class LobbyScene extends Phaser.Scene {
       .setDepth(101);
     pauseBg.on("pointerdown", () => this.flashPrompt("Pause"));
 
+    // Conta (opcional) — à direita do pause
+    const accountBg = this.add
+      .rectangle(108, 30, 92, 34, 0x5a3a7a, 0.92)
+      .setDepth(100)
+      .setStrokeStyle(2, 0xd4a5ff, 0.45)
+      .setInteractive({ useHandCursor: true });
+    this.accountBtnLabel = this.add
+      .text(108, 30, accountLabel(getAccountInfo()), {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "12px",
+        color: "#ffffff"
+      })
+      .setOrigin(0.5)
+      .setDepth(101);
+    accountBg.on("pointerdown", () => this.openAccount());
+
     // Gemas (ícone real)
     this.add
       .image(width - 78, 28, "gem")
@@ -367,6 +397,32 @@ export class LobbyScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(100)
       .setAlpha(0.75);
+  }
+
+  private openAccount() {
+    if (this.accountOpen) return;
+    if (!isFirebaseConfigured()) {
+      this.flashPrompt("Cloud save offline neste build");
+      return;
+    }
+    this.accountOpen = true;
+    const body = this.player?.body as Phaser.Physics.Arcade.Body | undefined;
+    body?.setVelocity(0, 0);
+    openAccountPanel({
+      onApplied: () => {
+        this.gemHud?.setText(String(metaState.gems));
+        this.accountBtnLabel?.setText(accountLabel(getAccountInfo()));
+        const cape = CAPES[metaState.equippedCape];
+        if (this.player?.active) {
+          if (cape.tint !== 0xffffff) this.player.setTint(cape.tint);
+          else this.player.clearTint();
+        }
+      },
+      onClose: () => {
+        this.accountOpen = false;
+        this.accountBtnLabel?.setText(accountLabel(getAccountInfo()));
+      }
+    });
   }
 
   private buildBottomNav() {
@@ -659,6 +715,12 @@ export class LobbyScene extends Phaser.Scene {
     if (!this.player?.active) return;
     const body = this.player.body as Phaser.Physics.Arcade.Body | null;
     if (!body) return;
+
+    // Painel de conta (DOM) aberto: congela o mago
+    if (this.accountOpen) {
+      body.setVelocity(0, 0);
+      return;
+    }
 
     // Durante o anúncio: mantém parado no ponto salvo
     if (this.adWatching) {

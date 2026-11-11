@@ -5,7 +5,9 @@ import {
   registerEnemyPackAnims,
   registerWizardPackAnims
 } from "../game/createAnims";
+import { hydratePlayerSave, flushSaveNow } from "../game/cloudSave";
 import { clearLobbyReturn, uiSel } from "../game/equipUi";
+import { applyPersistedMeta, metaState } from "../game/MetaState";
 import { tuneWizardAnimRates } from "../game/playerMotion";
 import { runState } from "../game/RunState";
 import { ensureHpHeart, ensureSkillIcons } from "../game/skillIcons";
@@ -284,6 +286,18 @@ export class BootScene extends Phaser.Scene {
       });
     }
 
+    void this.finishBoot();
+  }
+
+  /** Hidrata save (local + Firebase) e só então entra no jogo. */
+  private async finishBoot() {
+    try {
+      const saved = await hydratePlayerSave(metaState);
+      applyPersistedMeta(saved);
+    } catch (e) {
+      console.warn("[Boot] save cloud falhou — seguindo com local/default", e);
+    }
+
     const q = typeof location !== "undefined" ? location.search : "";
     const floorMatch = q.match(/[?&]floor=(\d+)/);
     if (floorMatch) {
@@ -293,6 +307,8 @@ export class BootScene extends Phaser.Scene {
     this.game.events.emit("wl-boot-ready");
     // Evita spawn “fantasma” na loja após HMR / reload a meio do armário
     if (!/[?&]equip=1/.test(q) && !/[?&]book=1/.test(q)) clearLobbyReturn();
+
+    window.addEventListener("beforeunload", () => flushSaveNow(metaState));
 
     if (/[?&]skills=1/.test(q)) this.scene.start("SkillSelect");
     else if (/[?&]book=1/.test(q)) {

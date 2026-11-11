@@ -1,4 +1,6 @@
-/** Progressão meta (lobby) — sobrevive entre runs. */
+/** Progressão meta (lobby) — sobrevive entre runs (+ Firebase/local). */
+
+import { queueCloudSave, type PersistedMeta } from "./cloudSave";
 
 export type CapeId =
   | "default"
@@ -189,10 +191,29 @@ export function claimOwlAdReward(): number {
   if (!owlAdReady()) return 0;
   metaState.lastOwlAdAt = Date.now();
   metaState.gems += OWL_AD_REWARD_GEMS;
+  notifyMetaChanged();
   return OWL_AD_REWARD_GEMS;
 }
 
 export const metaState: MetaState = createMetaState();
+
+/** Marca progresso sujo → localStorage + cloud (debounce). */
+export function notifyMetaChanged() {
+  queueCloudSave(metaState);
+}
+
+/** Aplica save hidratado sem trocar a referência de `metaState`. */
+export function applyPersistedMeta(data: PersistedMeta | MetaState) {
+  metaState.gems = data.gems;
+  metaState.coinsBank = data.coinsBank;
+  metaState.ownedCapes = [...data.ownedCapes];
+  metaState.ownedBooks = [...data.ownedBooks];
+  metaState.equippedCape = data.equippedCape;
+  metaState.equippedBook = data.equippedBook;
+  metaState.bestFloor = data.bestFloor;
+  metaState.bestCampaignFloor = data.bestCampaignFloor;
+  metaState.lastOwlAdAt = data.lastOwlAdAt;
+}
 
 export function ownCape(id: CapeId) {
   return metaState.ownedCapes.includes(id);
@@ -208,6 +229,7 @@ export function buyCape(id: CapeId): boolean {
   metaState.gems -= def.price;
   metaState.ownedCapes.push(id);
   metaState.equippedCape = id;
+  notifyMetaChanged();
   return true;
 }
 
@@ -217,5 +239,39 @@ export function buyBook(id: BookId): boolean {
   metaState.gems -= def.price;
   metaState.ownedBooks.push(id);
   metaState.equippedBook = id;
+  notifyMetaChanged();
   return true;
+}
+
+export function equipCape(id: CapeId): boolean {
+  if (!ownCape(id)) return false;
+  metaState.equippedCape = id;
+  notifyMetaChanged();
+  return true;
+}
+
+export function equipBook(id: BookId): boolean {
+  if (!ownBook(id)) return false;
+  metaState.equippedBook = id;
+  notifyMetaChanged();
+  return true;
+}
+
+export function recordBestFloor(floor: number, mode: "campaign" | "endless") {
+  let changed = false;
+  if (mode === "endless" && floor > metaState.bestFloor) {
+    metaState.bestFloor = floor;
+    changed = true;
+  } else if (mode === "campaign" && floor > metaState.bestCampaignFloor) {
+    metaState.bestCampaignFloor = floor;
+    changed = true;
+  }
+  if (changed) notifyMetaChanged();
+}
+
+export function bankRunRewards(gems: number, coins: number) {
+  if (gems <= 0 && coins <= 0) return;
+  metaState.gems += Math.max(0, gems);
+  metaState.coinsBank += Math.max(0, coins);
+  notifyMetaChanged();
 }

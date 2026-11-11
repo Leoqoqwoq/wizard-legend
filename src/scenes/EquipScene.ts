@@ -10,6 +10,8 @@ import {
   CAPES,
   buyBook,
   buyCape,
+  equipBook,
+  equipCape,
   metaState,
   ownBook,
   ownCape,
@@ -407,7 +409,7 @@ export class EquipScene extends Phaser.Scene {
           return;
         }
       } else {
-        metaState.equippedCape = id;
+        equipCape(id);
       }
     } else {
       const id = uiSel.book;
@@ -417,7 +419,7 @@ export class EquipScene extends Phaser.Scene {
           return;
         }
       } else {
-        metaState.equippedBook = id;
+        equipBook(id);
       }
     }
     this.scene.restart();

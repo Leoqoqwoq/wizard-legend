@@ -103,7 +103,10 @@ window.addEventListener("resize", () => {
 
 const wakeLoop = () => {
   try {
-    if (!game.loop.running) game.loop.start();
+    if (!game.loop.running) {
+      // Phaser 4 TimeStep.start exige o callback do step
+      game.loop.start(game.step.bind(game));
+    }
     game.loop.wake(true);
   } catch {
     /* ignore */
@@ -114,19 +117,22 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) wakeLoop();
 });
 
+function loaderSizes(loader: Phaser.Loader.LoaderPlugin) {
+  const list = loader.list as { size?: number };
+  const inflight = loader.inflight as { size?: number };
+  return {
+    listSize: typeof list.size === "number" ? list.size : 0,
+    inflightSize: typeof inflight.size === "number" ? inflight.size : 0,
+    progress: loader.progress
+  };
+}
+
 /** Recupera loader morto (lista pendente sem download em voo). */
 function kickDeadLoader() {
   const boot = game.scene.getScene("Boot") as Phaser.Scene | null;
   const loader = boot?.load;
   if (!loader || !loader.isLoading()) return false;
-  const listSize =
-    typeof (loader.list as { size?: number }).size === "number"
-      ? (loader.list as { size: number }).size
-      : 0;
-  const inflightSize =
-    typeof (loader.inflight as { size?: number }).size === "number"
-      ? (loader.inflight as { size: number }).size
-      : 0;
+  const { listSize, inflightSize } = loaderSizes(loader);
   if (listSize > 0 && inflightSize === 0) {
     console.warn("[WL] loader morto — retomando", listSize);
     try {
@@ -139,22 +145,36 @@ function kickDeadLoader() {
   return false;
 }
 
+let lastProgress = -1;
+let stuckTicks = 0;
+
 const bootWatch = window.setInterval(() => {
   if (bootReady) {
     window.clearInterval(bootWatch);
     return;
   }
   kickDeadLoader();
-}, 500);
 
-/** Se ainda preso após 5s, reinicia o Boot do zero. */
-window.setTimeout(() => {
-  if (bootReady) return;
-  console.warn("[WL] Boot preso — reiniciando cena");
-  try {
-    game.scene.stop("Boot");
-  } catch {
-    /* ignore */
+  const boot = game.scene.getScene("Boot") as Phaser.Scene | null;
+  const loader = boot?.load;
+  if (!loader?.isLoading()) return;
+  const { progress } = loaderSizes(loader);
+  if (Math.abs(progress - lastProgress) < 0.001) {
+    stuckTicks += 1;
+  } else {
+    stuckTicks = 0;
+    lastProgress = progress;
   }
-  game.scene.start("Boot");
-}, 5000);
+  // Só reinicia se a barra ficou parada ~4s (8 × 500ms), não se ainda carrega
+  if (stuckTicks >= 8 && progress < 1) {
+    console.warn("[WL] Boot preso sem progresso — reiniciando cena", progress);
+    stuckTicks = 0;
+    lastProgress = -1;
+    try {
+      game.scene.stop("Boot");
+    } catch {
+      /* ignore */
+    }
+    game.scene.start("Boot");
+  }
+}, 500);

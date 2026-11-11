@@ -17,6 +17,8 @@ function asset(path: string) {
 }
 
 export class BootScene extends Phaser.Scene {
+  private loaderKick: number | null = null;
+
   constructor() {
     super("Boot");
   }
@@ -57,9 +59,13 @@ export class BootScene extends Phaser.Scene {
         /* ignore */
       }
     });
-    const kick = window.setInterval(() => {
+    if (this.loaderKick != null) {
+      window.clearInterval(this.loaderKick);
+      this.loaderKick = null;
+    }
+    this.loaderKick = window.setInterval(() => {
       if (this.game.registry.get("wlBootReady")) {
-        window.clearInterval(kick);
+        this.clearLoaderKick();
         return;
       }
       const loader = this.load;
@@ -72,7 +78,7 @@ export class BootScene extends Phaser.Scene {
             /* ignore */
           }
         } else if (!loader?.isLoading()) {
-          window.clearInterval(kick);
+          this.clearLoaderKick();
         }
         return;
       }
@@ -86,6 +92,8 @@ export class BootScene extends Phaser.Scene {
         }
       }
     }, 350);
+    this.events.once("shutdown", () => this.clearLoaderKick());
+    this.events.once("destroy", () => this.clearLoaderKick());
 
     this.load.spritesheet("wizard", asset("assets/wizard_sheet.png"), {
       frameWidth: 48,
@@ -217,7 +225,15 @@ export class BootScene extends Phaser.Scene {
     }
   }
 
+  private clearLoaderKick() {
+    if (this.loaderKick != null) {
+      window.clearInterval(this.loaderKick);
+      this.loaderKick = null;
+    }
+  }
+
   create() {
+    this.clearLoaderKick();
     generateTexturesAndAnims(this);
     ensureHpHeart(this);
     ensureSkillIcons(this);

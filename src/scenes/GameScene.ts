@@ -169,14 +169,21 @@ export class GameScene extends Phaser.Scene {
       this.playerBullets,
       this.blocks,
       this.onPlayerBulletHitWall as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      (
-        bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+      ((
+        object1:
+          | Phaser.Types.Physics.Arcade.GameObjectWithBody
+          | Phaser.Physics.Arcade.Body
+          | Phaser.Physics.Arcade.StaticBody
+          | Phaser.Tilemaps.Tile
       ) => {
-        const bullet = bulletObj as Phaser.Physics.Arcade.Image;
-        if (!bullet.active) return false;
+        const bullet =
+          object1 && "getData" in object1
+            ? (object1 as Phaser.Physics.Arcade.Image)
+            : null;
+        if (!bullet?.active) return false;
         const spawnAt = (bullet.getData("spawnAt") as number) || 0;
         return this.time.now - spawnAt >= 60;
-      },
+      }) as unknown as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       this
     );
     this.physics.add.overlap(
@@ -302,7 +309,10 @@ export class GameScene extends Phaser.Scene {
     this.elevator.setDepth(2);
     this.elevator.setDisplaySize(48, 48);
     this.elevator.setVisible(false);
-    this.elevator.body.enable = false;
+    {
+      const eBody = this.elevator.body as Phaser.Physics.Arcade.Body | null;
+      if (eBody) eBody.enable = false;
+    }
     this.elevator.setInteractive({ useHandCursor: true });
     this.elevator.on("pointerdown", () => {
       if (!this.cleared) return;
@@ -891,22 +901,24 @@ export class GameScene extends Phaser.Scene {
       else e.clearTint();
 
       // Perseguir / flanquear
+      const eBody = e.body as Phaser.Physics.Arcade.Body | null;
+      if (!eBody) return;
       const angle = Phaser.Math.Angle.Between(e.x, e.y, this.player.x, this.player.y);
       if (data.isBoss) {
         // Boss fica mais na metade de cima e orbita
         this.physics.velocityFromRotation(
           angle + Math.sin(this.time.now / 700) * 0.9,
           data.speed,
-          e.body.velocity as Phaser.Math.Vector2
+          eBody.velocity
         );
       } else if (data.kind === "eye" || data.kind === "bug") {
-        this.physics.velocityFromRotation(angle, data.speed, e.body.velocity as Phaser.Math.Vector2);
+        this.physics.velocityFromRotation(angle, data.speed, eBody.velocity);
       } else {
         // bots/pop mais lentos, orbitam um pouco
         this.physics.velocityFromRotation(
           angle + Math.sin(this.time.now / 400) * 0.5,
           data.speed * 0.7,
-          e.body.velocity as Phaser.Math.Vector2
+          eBody.velocity
         );
       }
 
@@ -1339,7 +1351,10 @@ export class GameScene extends Phaser.Scene {
       this.elevator.setDisplaySize(48, 48);
       this.elevator.setScale(1);
       this.elevator.setVisible(true);
-      this.elevator.body.enable = true;
+      {
+        const eBody = this.elevator.body as Phaser.Physics.Arcade.Body | null;
+        if (eBody) eBody.enable = true;
+      }
       const exitMsg = isFinalCampaignFloor(runState.floor)
         ? "↑ Vitória!"
         : runState.floor === 60

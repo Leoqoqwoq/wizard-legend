@@ -92,10 +92,10 @@ export class LobbyScene extends Phaser.Scene {
       90
     );
     this.battleZone = new Phaser.Geom.Rectangle(
-      this.room.centerX - 40,
-      this.room.y + 8,
-      80,
-      50
+      this.room.centerX - 48,
+      this.room.y + 4,
+      96,
+      70
     );
     this.owlZone = new Phaser.Geom.Rectangle(
       this.room.right - 88,
@@ -169,16 +169,17 @@ export class LobbyScene extends Phaser.Scene {
         .setDepth(3);
     }
 
-    // Porta de batalha — fixa (sem tween/pulse)
-    this.add
-      .image(r.centerX, r.y + 28, "tile_door_closed")
-      .setDisplaySize(48, 48)
+    // Portal de batalha (CC0 RodHak) — combina melhor com o mapa pixel
+    const lobbyPortal = this.add
+      .sprite(r.centerX, r.y + 40, "portal_fx", 0)
+      .setDisplaySize(56, 72)
       .setDepth(4)
       .setName("lobbyDoor");
+    if (this.anims.exists("portal-spin")) lobbyPortal.play("portal-spin");
     this.add
-      .text(r.centerX, r.y + 56, "BATALHA", {
+      .text(r.centerX, r.y + 80, "BATALHA", {
         fontFamily: "Arial Black, Arial",
-        fontSize: "11px",
+        fontSize: "12px",
         color: "#f1c40f",
         stroke: "#000",
         strokeThickness: 3
@@ -622,7 +623,7 @@ export class LobbyScene extends Phaser.Scene {
     const margin = 28;
     this.room.setTo(margin, 70, width - margin * 2, height - 200);
     this.shopZone.setTo(this.room.x + 20, this.room.y + 40, 110, 90);
-    this.battleZone.setTo(this.room.centerX - 40, this.room.y + 8, 80, 50);
+    this.battleZone.setTo(this.room.centerX - 48, this.room.y + 4, 96, 70);
     this.owlZone.setTo(this.room.right - 88, this.room.y + 100, 80, 70);
     this.prompt?.setPosition(width / 2, height - 175);
     this.joystick?.reflow();
@@ -764,7 +765,10 @@ export class LobbyScene extends Phaser.Scene {
       this.room.bottom - 18
     );
 
-    const door = this.children.getByName("lobbyDoor") as Phaser.GameObjects.Image | null;
+    const door = this.children.getByName("lobbyDoor") as
+      | Phaser.GameObjects.Sprite
+      | Phaser.GameObjects.Image
+      | null;
 
     if (this.interactLock > 0) {
       this.interactLock -= dt;
@@ -775,16 +779,11 @@ export class LobbyScene extends Phaser.Scene {
     // Interações por proximidade
     if (Phaser.Geom.Rectangle.Contains(this.battleZone, this.player.x, this.player.y)) {
       this.battleHold += dt;
-      if (door && door.texture.key !== "tile_door_open") {
-        door.setTexture("tile_door_open").setDisplaySize(48, 48);
-      }
+      if (door) door.setDisplaySize(56, 72);
       this.prompt.setText("↑ Campanha (6 reinos)…").setAlpha(1);
       if (this.battleHold > 0.4) this.startBattle("campaign");
     } else if (Phaser.Geom.Rectangle.Contains(this.shopZone, this.player.x, this.player.y)) {
       this.battleHold += dt;
-      if (door && door.texture.key !== "tile_door_closed") {
-        door.setTexture("tile_door_closed").setDisplaySize(48, 48);
-      }
       this.prompt.setText("👕 Abrir armário…").setAlpha(1);
       if (this.battleHold > 0.35) {
         this.battleHold = 0;
@@ -792,9 +791,6 @@ export class LobbyScene extends Phaser.Scene {
       }
     } else if (Phaser.Geom.Rectangle.Contains(this.owlZone, this.player.x, this.player.y)) {
       this.battleHold += dt;
-      if (door && door.texture.key !== "tile_door_closed") {
-        door.setTexture("tile_door_closed").setDisplaySize(48, 48);
-      }
       const ready = owlAdReady();
       this.prompt
         .setText(
@@ -810,9 +806,6 @@ export class LobbyScene extends Phaser.Scene {
     } else {
       this.battleHold = 0;
       this.prompt.setAlpha(0);
-      if (door && door.texture.key !== "tile_door_closed") {
-        door.setTexture("tile_door_closed").setDisplaySize(48, 48);
-      }
     }
   }
 }

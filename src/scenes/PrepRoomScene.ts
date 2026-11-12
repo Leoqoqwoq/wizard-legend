@@ -114,10 +114,11 @@ export class PrepRoomScene extends Phaser.Scene {
     }
 
     const door = this.add
-      .image(r.centerX, r.y + 28, "tile_door_closed")
-      .setDisplaySize(48, 48)
+      .sprite(r.centerX, r.y + 40, "portal_fx", 0)
+      .setDisplaySize(56, 72)
       .setDepth(5)
       .setName("prepDoor");
+    if (this.anims.exists("portal-spin")) door.play("portal-spin");
 
     const ultra = isUltraBossFloor(runState.floor);
     const kingdom = kingdomForFloor(runState.floor, runState.mode === "endless");
@@ -477,12 +478,12 @@ export class PrepRoomScene extends Phaser.Scene {
 
     if (Phaser.Geom.Rectangle.Contains(this.exitZone, this.player.x, this.player.y)) {
       this.hold += dt;
-      door?.setTexture("tile_door_open").setDisplaySize(48, 48);
+      door?.setDisplaySize(56, 72);
       this.prompt.setText("↑ Entrar no BOSS…").setAlpha(1);
       if (this.hold > 0.4) this.goBoss();
     } else if (Phaser.Geom.Rectangle.Contains(this.shopZone, this.player.x, this.player.y)) {
       this.hold += dt;
-      door?.setTexture("tile_door_closed").setDisplaySize(48, 48);
+      door?.setDisplaySize(56, 72);
       this.prompt.setText("🐰 Melhorias do libro…").setAlpha(1);
       if (this.hold > 0.35) {
         this.hold = 0;
@@ -491,7 +492,7 @@ export class PrepRoomScene extends Phaser.Scene {
     } else {
       this.hold = 0;
       this.prompt.setAlpha(0);
-      door?.setTexture("tile_door_closed").setDisplaySize(48, 48);
+      door?.setDisplaySize(56, 72);
     }
   }
 }

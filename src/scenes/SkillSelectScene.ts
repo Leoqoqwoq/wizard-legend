@@ -82,7 +82,7 @@ export class SkillSelectScene extends Phaser.Scene {
   private renderCards() {
     this.cardsRoot?.removeAll(true);
     const { width, height } = this.scale;
-    const cardY = Math.min(height * 0.55, height - 210);
+    const cardY = Math.min(height * 0.56, height - 220);
 
     if (this.choices.length === 0) {
       this.cardsRoot?.add(
@@ -97,7 +97,7 @@ export class SkillSelectScene extends Phaser.Scene {
       return;
     }
 
-    const gap = Math.min(150, width / (this.choices.length + 0.5));
+    const gap = Math.min(168, width / (this.choices.length + 0.35));
     const startX = width / 2 - ((this.choices.length - 1) * gap) / 2;
     this.choices.forEach((id, i) => {
       this.createCard(startX + i * gap, cardY, id, i);
@@ -216,67 +216,113 @@ export class SkillSelectScene extends Phaser.Scene {
     const def = SKILLS[id];
     const panelKey = CARD_KEYS[index % CARD_KEYS.length];
     const root = this.cardsRoot!;
+    const stacks = runState.skills[id] ?? 0;
+    const isNew = stacks === 0;
+    const nextLv = stacks + 1;
 
-    const wrap = this.add.container(x, y).setAlpha(0).setScale(0.72);
+    const wrap = this.add.container(x, y).setAlpha(0).setScale(0.68);
+    const glow = this.add
+      .ellipse(0, 8, 132, 198, def.color, 0.22)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
     const card = this.add
       .image(0, 0, panelKey)
-      .setDisplaySize(118, 176)
+      .setDisplaySize(132, 198)
       .setInteractive({ useHandCursor: true });
-    const iconGlow = this.add.image(0, -28, "ui_soft_slot").setDisplaySize(58, 58);
-    const icon = this.add.image(0, -28, skillIconKey(def)).setDisplaySize(48, 48);
+
     const title = this.add
-      .text(0, -72, def.name, {
+      .text(0, -78, def.name, {
         fontFamily: "Arial Black, Arial",
-        fontSize: "13px",
-        color: "#3b2414",
+        fontSize: "12px",
+        color: "#2e1a0c",
         align: "center",
-        wordWrap: { width: 96 }
+        wordWrap: { width: 108 }
       })
       .setOrigin(0.5);
+
+    const iconRing = this.add
+      .circle(0, -18, 34, 0xffffff, 0.12)
+      .setStrokeStyle(2, def.color, 0.55);
+    const icon = this.add
+      .image(0, -18, skillIconKey(def))
+      .setDisplaySize(52, 52);
+
     const desc = this.add
-      .text(0, 36, def.description, {
+      .text(0, 42, def.description, {
         fontFamily: "Arial",
         fontSize: "11px",
         color: "#4a2e18",
         align: "center",
-        wordWrap: { width: 92 }
-      })
-      .setOrigin(0.5);
-    const stacks = runState.skills[id] ?? 0;
-    const lv = this.add
-      .text(0, 68, `Nv. ${stacks + 1}`, {
-        fontFamily: "Arial Black, Arial",
-        fontSize: "13px",
-        color: "#6b3a1f"
+        wordWrap: { width: 104 },
+        lineSpacing: 2
       })
       .setOrigin(0.5);
 
-    wrap.add([card, iconGlow, icon, title, desc, lv]);
+    const badgeKey = isNew ? "ui_soft_badge_new" : "ui_soft_badge";
+    const badge = this.add.image(0, 78, badgeKey).setDisplaySize(78, 28);
+    const badgeTxt = this.add
+      .text(0, 78, isNew ? "NOVA" : `Nv. ${nextLv}`, {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "12px",
+        color: isNew ? "#1e4a12" : "#4a2e08",
+        stroke: "#fff8e0",
+        strokeThickness: 2
+      })
+      .setOrigin(0.5);
+
+    wrap.add([glow, card, title, iconRing, icon, desc, badge, badgeTxt]);
     root.add(wrap);
 
     this.tweens.add({
       targets: wrap,
       alpha: 1,
       scale: 1,
-      delay: 80 + index * 90,
-      duration: 340,
-      ease: "Back.easeOut"
+      delay: 70 + index * 95,
+      duration: 360,
+      ease: "Back.easeOut",
+      onComplete: () => {
+        this.tweens.add({
+          targets: wrap,
+          y: y - 5,
+          duration: 1400 + index * 120,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut"
+        });
+      }
     });
 
     card.on("pointerover", () => {
-      card.setTint(0xfff6d8);
-      this.tweens.add({ targets: wrap, scale: 1.08, duration: 120 });
+      card.setTint(0xfff8e8);
+      glow.setAlpha(0.42);
+      this.tweens.add({
+        targets: wrap,
+        scale: 1.1,
+        duration: 130,
+        ease: "Back.easeOut"
+      });
+      this.tweens.add({
+        targets: icon,
+        angle: { from: -6, to: 6 },
+        duration: 220,
+        yoyo: true
+      });
     });
     card.on("pointerout", () => {
       card.clearTint();
+      glow.setAlpha(0.22);
+      icon.setAngle(0);
       this.tweens.add({ targets: wrap, scale: 1, duration: 120 });
     });
     card.on("pointerdown", () => {
+      this.tweens.killTweensOf(wrap);
       this.tweens.add({
         targets: wrap,
-        scale: 1.16,
-        alpha: 0.25,
-        duration: 140,
+        scale: 1.2,
+        alpha: 0.15,
+        y: y - 24,
+        duration: 160,
+        ease: "Cubic.easeIn",
         onComplete: () => {
           runState.skills[id] = (runState.skills[id] ?? 0) + 1;
           if (id === "hp_boost") {

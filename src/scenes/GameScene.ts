@@ -309,11 +309,12 @@ export class GameScene extends Phaser.Scene {
   private spawnElevator() {
     const r = this.room;
     // Porta do tileset como elevador / saída
-    this.elevator = this.physics.add.sprite(r.centerX, r.y + 28, "tile_door_closed");
+    this.elevator = this.physics.add.sprite(r.centerX, r.y + 40, "portal_fx", 0);
     this.elevator.setImmovable(true);
-    this.elevator.setDepth(2);
-    this.elevator.setDisplaySize(48, 48);
+    this.elevator.setDepth(6);
+    this.elevator.setDisplaySize(56, 72);
     this.elevator.setVisible(false);
+    this.elevator.setAlpha(0.95);
     {
       const eBody = this.elevator.body as Phaser.Physics.Arcade.Body | null;
       if (eBody) eBody.enable = false;
@@ -791,15 +792,25 @@ export class GameScene extends Phaser.Scene {
     b.setTexture(tex);
     b.setActive(true).setVisible(true).setDepth(16);
     b.clearTint();
-    b.setDisplaySize(tex === "bullet_dark" ? 22 : 18, tex === "bullet_dark" ? 22 : 18);
-    b.setRotation(0);
+    if (tex === "bullet_player") {
+      b.setDisplaySize(14, 18);
+      b.setRotation(angle + Math.PI / 2);
+    } else {
+      b.setDisplaySize(tex === "bullet_dark" ? 22 : 18, tex === "bullet_dark" ? 22 : 18);
+      b.setRotation(0);
+    }
     b.setPosition(x, y);
 
     const body = b.body as Phaser.Physics.Arcade.Body | null;
     if (!body) return;
     body.enable = true;
     body.setAllowGravity(false);
-    body.setCircle(5, b.width / 2 - 5, b.height / 2 - 5);
+    if (tex === "bullet_player") {
+      body.setSize(8, 8);
+      body.setOffset(b.width / 2 - 4, b.height / 2 - 4);
+    } else {
+      body.setCircle(5, b.width / 2 - 5, b.height / 2 - 5);
+    }
     body.reset(x, y);
     this.physics.velocityFromRotation(angle, speed, body.velocity);
 
@@ -810,21 +821,49 @@ export class GameScene extends Phaser.Scene {
     b.setData("lastBounceAt", 0);
   }
 
-  /** Destrói tiro nas bordas da arena (paredes do mapa). */
+  /** Destrói tiro nas bordas; com wall_bounce rebate 1x nas bordas da arena. */
   private cullPlayerBulletsAtWalls() {
     const pad = 2;
     const r = this.room;
     this.playerBullets.getChildren().forEach((obj) => {
       const b = obj as Phaser.Physics.Arcade.Image;
       if (!b.active) return;
-      if (
+      const body = b.body as Phaser.Physics.Arcade.Body | null;
+      const out =
         b.x < r.x - pad ||
         b.x > r.right + pad ||
         b.y < r.y - pad ||
-        b.y > r.bottom + pad
-      ) {
-        this.killPlayerBullet(b);
+        b.y > r.bottom + pad;
+      if (!out) {
+        // Tiro parado/preso no mapa → limpa
+        if (body && body.velocity.length() < 8) {
+          const lastBounce = (b.getData("lastBounceAt") as number) || 0;
+          if (lastBounce > 0 && this.time.now - lastBounce > 120) {
+            this.killPlayerBullet(b);
+          }
+        }
+        return;
       }
+
+      const bounces = (b.getData("bounces") as number) || 0;
+      const lastBounce = (b.getData("lastBounceAt") as number) || 0;
+      if (bounces > 0 && body && this.time.now - lastBounce >= 50) {
+        const speed = Math.max(body.velocity.length(), 320);
+        let vx = body.velocity.x;
+        let vy = body.velocity.y;
+        if (b.x < r.x - pad || b.x > r.right + pad) vx = -vx;
+        if (b.y < r.y - pad || b.y > r.bottom + pad) vy = -vy;
+        const len = Math.hypot(vx, vy) || 1;
+        body.setVelocity((vx / len) * speed, (vy / len) * speed);
+        b.x = Phaser.Math.Clamp(b.x, r.x + 8, r.right - 8);
+        b.y = Phaser.Math.Clamp(b.y, r.y + 8, r.bottom - 8);
+        body.x = b.x - body.halfWidth;
+        body.y = b.y - body.halfHeight;
+        b.setData("bounces", bounces - 1);
+        b.setData("lastBounceAt", this.time.now);
+        return;
+      }
+      this.killPlayerBullet(b);
     });
   }
 
@@ -853,22 +892,43 @@ export class GameScene extends Phaser.Scene {
     if (bounces > 0) {
       const lastBounce = (bullet.getData("lastBounceAt") as number) || 0;
       if (this.time.now - lastBounce < 50) return;
-      bullet.setData("bounces", bounces - 1);
-      bullet.setData("lastBounceAt", this.time.now);
       const body = bullet.body as Phaser.Physics.Arcade.Body | null;
       if (!body) {
         this.killPlayerBullet(bullet);
         return;
       }
-      // Overlap não preenche blocked.* — rebate pela normal do bloco
+
+      // Guarda velocidade ANTES — body.reset() zera e deixava o tiro preso no mapa
+      const speed = Math.max(body.velocity.length(), 320);
       const wall = wallObj as Phaser.Physics.Arcade.Sprite;
       const dx = bullet.x - wall.x;
       const dy = bullet.y - wall.y;
-      if (Math.abs(dx) > Math.abs(dy)) body.velocity.x *= -1;
-      else body.velocity.y *= -1;
-      bullet.x += Math.sign(body.velocity.x || dx) * 8;
-      bullet.y += Math.sign(body.velocity.y || dy) * 8;
-      body.reset(bullet.x, bullet.y);
+      let vx = body.velocity.x;
+      let vy = body.velocity.y;
+      if (Math.abs(dx) > Math.abs(dy)) vx = -vx;
+      else vy = -vy;
+      if (Math.abs(vx) < 1 && Math.abs(vy) < 1) {
+        // Sem direção útil → empurra pra fora e segue
+        vx = Math.sign(dx) || 1;
+        vy = Math.sign(dy) || 0;
+      }
+      const len = Math.hypot(vx, vy) || 1;
+      vx = (vx / len) * speed;
+      vy = (vy / len) * speed;
+
+      const push = 14;
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        bullet.x += Math.sign(vx || dx) * push;
+      } else {
+        bullet.y += Math.sign(vy || dy) * push;
+      }
+      // Só reposiciona o body — NÃO usar reset (ele chama stop())
+      body.x = bullet.x - body.halfWidth;
+      body.y = bullet.y - body.halfHeight;
+      body.setVelocity(vx, vy);
+
+      bullet.setData("bounces", bounces - 1);
+      bullet.setData("lastBounceAt", this.time.now);
       return;
     }
 
@@ -1352,13 +1412,20 @@ export class GameScene extends Phaser.Scene {
     const alive = this.enemies.countActive(true);
     if (alive === 0) {
       this.cleared = true;
-      this.elevator.setTexture("tile_door_open");
-      this.elevator.setDisplaySize(48, 48);
-      this.elevator.setScale(1);
+      this.elevator.setTexture("portal_fx");
+      this.elevator.setDisplaySize(56, 72);
       this.elevator.setVisible(true);
+      if (this.anims.exists("portal-spin")) this.elevator.play("portal-spin");
       {
         const eBody = this.elevator.body as Phaser.Physics.Arcade.Body | null;
-        if (eBody) eBody.enable = true;
+        if (eBody) {
+          eBody.enable = true;
+          eBody.setSize(28, 36);
+          eBody.setOffset(
+            (this.elevator.width - 28) / 2,
+            (this.elevator.height - 36) / 2
+          );
+        }
       }
       const exitMsg = isFinalCampaignFloor(runState.floor)
         ? "↑ Vitória!"

@@ -254,8 +254,32 @@ function generateStatic(scene: Phaser.Scene) {
     ctx.stroke();
   });
 
+  // Tiro do mago: losango pequeno
+  addFrame(scene, "bullet_player", 32, 32, (ctx) => {
+    const cx = 16;
+    const cy = 16;
+    ctx.shadowColor = "#5dade2";
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 10);
+    ctx.lineTo(cx + 7, cy);
+    ctx.lineTo(cx, cy + 10);
+    ctx.lineTo(cx - 7, cy);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(cx, cy - 10, cx, cy + 10);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.35, "#d6eaf8");
+    g.addColorStop(0.75, "#5dade2");
+    g.addColorStop(1, "#2874a6");
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+
   const bullets: [string, string, string][] = [
-    ["bullet_player", "#85c1e9", "#d6eaf8"],
     ["bullet_enemy", "#e74c3c", "#f5b7b1"],
     ["bullet_dark", "#8e44ad", "#d2b4de"],
     ["bullet_fire", "#e67e22", "#fdebd0"],
@@ -346,42 +370,179 @@ function generateStatic(scene: Phaser.Scene) {
 
 /** UI suave/arredondada (cartas, livro, botões). */
 function generateSoftUi(scene: Phaser.Scene) {
-  // Carta de skill — pergaminho arredondado
-  const makeCard = (key: string, c0: string, c1: string, edge: string) => {
-    addFrame(scene, key, 160, 240, (ctx) => {
-      ctx.shadowColor = "rgba(0,0,0,0.35)";
-      ctx.shadowBlur = 18;
-      ctx.shadowOffsetY = 8;
-      const g = ctx.createLinearGradient(0, 0, 0, 240);
-      g.addColorStop(0, c0);
-      g.addColorStop(1, c1);
-      ctx.fillStyle = g;
-      roundRect(ctx, 12, 10, 136, 212, 28);
+  // Carta de skill — moldura mágica + pergaminho
+  const makeCard = (
+    key: string,
+    paper0: string,
+    paper1: string,
+    trim: string,
+    gem: string
+  ) => {
+    addFrame(scene, key, 180, 270, (ctx) => {
+      const x = 14;
+      const y = 12;
+      const w = 152;
+      const h = 240;
+
+      // sombra
+      ctx.shadowColor = "rgba(20,8,30,0.45)";
+      ctx.shadowBlur = 22;
+      ctx.shadowOffsetY = 10;
+      ctx.fillStyle = "#2a1838";
+      roundRect(ctx, x, y, w, h, 22);
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = edge;
-      ctx.lineWidth = 4;
-      roundRect(ctx, 12, 10, 136, 212, 28);
-      ctx.stroke();
-      // brilho superior
-      ctx.fillStyle = "rgba(255,255,255,0.22)";
-      roundRect(ctx, 22, 18, 116, 36, 16);
+      ctx.shadowOffsetY = 0;
+
+      // moldura externa (ouro / gema)
+      const frameG = ctx.createLinearGradient(x, y, x + w, y + h);
+      frameG.addColorStop(0, "#ffe9a8");
+      frameG.addColorStop(0.35, trim);
+      frameG.addColorStop(0.7, "#c9a24a");
+      frameG.addColorStop(1, trim);
+      ctx.fillStyle = frameG;
+      roundRect(ctx, x, y, w, h, 22);
       ctx.fill();
+
+      // filete interno escuro
+      ctx.strokeStyle = "rgba(60,30,10,0.55)";
+      ctx.lineWidth = 2;
+      roundRect(ctx, x + 5, y + 5, w - 10, h - 10, 18);
+      ctx.stroke();
+
+      // papel / pergaminho
+      const paper = ctx.createLinearGradient(0, y + 8, 0, y + h - 8);
+      paper.addColorStop(0, paper0);
+      paper.addColorStop(0.55, "#fff8ec");
+      paper.addColorStop(1, paper1);
+      ctx.fillStyle = paper;
+      roundRect(ctx, x + 8, y + 8, w - 16, h - 16, 16);
+      ctx.fill();
+
+      // faixa superior colorida (título)
+      const band = ctx.createLinearGradient(0, y + 10, 0, y + 52);
+      band.addColorStop(0, gem);
+      band.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = band;
+      roundRect(ctx, x + 10, y + 10, w - 20, 44, 12);
+      ctx.fill();
+
+      // brilho suave no topo
+      ctx.fillStyle = "rgba(255,255,255,0.28)";
+      roundRect(ctx, x + 18, y + 14, w - 36, 18, 9);
+      ctx.fill();
+
+      // cantos decorativos
+      const corner = (cx: number, cy: number, rot: number) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        ctx.strokeStyle = trim;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(0, 14);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(14, 0);
+        ctx.stroke();
+        ctx.fillStyle = gem;
+        ctx.beginPath();
+        ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      };
+      corner(x + 20, y + 20, 0);
+      corner(x + w - 20, y + 20, Math.PI / 2);
+      corner(x + w - 20, y + h - 20, Math.PI);
+      corner(x + 20, y + h - 20, -Math.PI / 2);
+
       // medalhão do ícone
-      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      const mx = x + w / 2;
+      const my = y + 98;
+      ctx.shadowColor = "rgba(80,40,20,0.25)";
+      ctx.shadowBlur = 10;
+      const med = ctx.createRadialGradient(mx - 6, my - 8, 4, mx, my, 40);
+      med.addColorStop(0, "#fffdf6");
+      med.addColorStop(0.65, "#f0d9a8");
+      med.addColorStop(1, "#c9a06a");
+      ctx.fillStyle = med;
       ctx.beginPath();
-      ctx.arc(80, 88, 34, 0, Math.PI * 2);
+      ctx.arc(mx, my, 38, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(80,40,20,0.25)";
-      ctx.lineWidth = 3;
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = trim;
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
-      ctx.arc(80, 88, 34, 0, Math.PI * 2);
+      ctx.arc(mx, my, 38, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.55)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(mx, my, 32, -0.9, 0.5);
+      ctx.stroke();
+
+      // faixa inferior (nível)
+      ctx.fillStyle = "rgba(90,50,25,0.08)";
+      roundRect(ctx, x + 18, y + h - 52, w - 36, 28, 10);
+      ctx.fill();
+
+      // estrelinhas
+      ctx.fillStyle = "rgba(255,220,120,0.55)";
+      for (const [sx, sy, r] of [
+        [x + 28, y + 150, 1.6],
+        [x + w - 30, y + 158, 1.2],
+        [x + 36, y + 200, 1.1],
+        [x + w - 34, y + 196, 1.4]
+      ] as const) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     });
   };
-  makeCard("ui_soft_card", "#fff3d6", "#e8c48a", "#c48a4a");
-  makeCard("ui_soft_card_alt", "#f3e7ff", "#c9a6e8", "#8e5bb8");
-  makeCard("ui_soft_card_warm", "#ffe8d6", "#f0a878", "#d4783a");
+  makeCard("ui_soft_card", "#fff6e4", "#e8c48a", "#c9a24a", "#f0c878");
+  makeCard("ui_soft_card_alt", "#f8efff", "#d2b0ef", "#9b6bc4", "#d4a8ff");
+  makeCard("ui_soft_card_warm", "#fff0e4", "#f0a878", "#d4783a", "#ffb080");
+
+  // Badge de nível / nova
+  addFrame(scene, "ui_soft_badge", 96, 36, (ctx) => {
+    ctx.shadowColor = "rgba(0,0,0,0.28)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+    const g = ctx.createLinearGradient(0, 0, 0, 36);
+    g.addColorStop(0, "#ffe7a0");
+    g.addColorStop(1, "#d4a017");
+    ctx.fillStyle = g;
+    roundRect(ctx, 6, 6, 84, 24, 12);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "#8a5a10";
+    ctx.lineWidth = 2;
+    roundRect(ctx, 6, 6, 84, 24, 12);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    roundRect(ctx, 12, 9, 72, 8, 4);
+    ctx.fill();
+  });
+
+  addFrame(scene, "ui_soft_badge_new", 96, 36, (ctx) => {
+    ctx.shadowColor = "rgba(0,0,0,0.28)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+    const g = ctx.createLinearGradient(0, 0, 0, 36);
+    g.addColorStop(0, "#c8f5a8");
+    g.addColorStop(1, "#5fbf3a");
+    ctx.fillStyle = g;
+    roundRect(ctx, 6, 6, 84, 24, 12);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "#2f7a18";
+    ctx.lineWidth = 2;
+    roundRect(ctx, 6, 6, 84, 24, 12);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    roundRect(ctx, 12, 9, 72, 8, 4);
+    ctx.fill();
+  });
 
   // Livro aberto suave (substitui o print estranho)
   addFrame(scene, "ui_soft_book", 420, 260, (ctx, w, h) => {

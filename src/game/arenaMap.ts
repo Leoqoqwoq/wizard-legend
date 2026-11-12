@@ -85,6 +85,8 @@ export function pickArenaLayout(
   return presets[(floor * 5 + floor) % presets.length] ?? "corners";
 }
 
+const MAX_OBSTACLES = 4;
+
 function obstaclePoints(
   room: Phaser.Geom.Rectangle,
   layout: ArenaLayoutId,
@@ -98,55 +100,64 @@ function obstaclePoints(
   const top = r.y + 80;
   const bottom = r.bottom - 96;
 
+  let pts: { x: number; y: number }[];
   switch (layout) {
     case "arena_open":
-      return [
+      pts = [
         { x: left, y: top },
         { x: right, y: top }
       ];
-    case "corners": {
-      const pts = [
+      break;
+    case "corners":
+      pts = [
         { x: left, y: top },
         { x: right, y: top },
         { x: left, y: bottom },
         { x: right, y: bottom }
       ];
-      if (floor % 2 === 0) pts.push({ x: cx, y: cy });
-      return pts;
-    }
+      break;
     case "cross":
-      return [
+      pts = [
         { x: cx, y: top + 20 },
         { x: cx, y: bottom - 20 },
         { x: left + 20, y: cy },
-        { x: right - 20, y: cy },
-        ...(floor % 2 === 0 ? [{ x: cx, y: cy }] : [])
+        { x: right - 20, y: cy }
       ];
+      break;
     case "lanes":
-      return [
-        { x: left, y: top + 40 },
-        { x: left, y: bottom - 40 },
-        { x: right, y: top + 40 },
-        { x: right, y: bottom - 40 },
-        { x: cx - 56, y: cy },
-        { x: cx + 56, y: cy }
-      ];
+      // 4 só — evita mapa entulhado
+      pts =
+        floor % 2 === 0
+          ? [
+              { x: left, y: top + 40 },
+              { x: left, y: bottom - 40 },
+              { x: right, y: top + 40 },
+              { x: right, y: bottom - 40 }
+            ]
+          : [
+              { x: left, y: cy },
+              { x: right, y: cy },
+              { x: cx - 56, y: top + 30 },
+              { x: cx + 56, y: bottom - 30 }
+            ];
+      break;
     case "gauntlet":
-      return [
+      pts = [
         { x: left + 30, y: top + 30 },
-        { x: cx, y: cy },
         { x: right - 30, y: bottom - 30 },
         { x: right - 40, y: top + 50 },
         { x: left + 40, y: bottom - 50 }
       ];
+      break;
     default:
-      return [
+      pts = [
         { x: left, y: top },
         { x: right, y: top },
         { x: left, y: bottom },
         { x: right, y: bottom }
       ];
   }
+  return pts.slice(0, MAX_OBSTACLES);
 }
 
 function placeDecor(
@@ -266,12 +277,13 @@ export function buildArenaVisual(
         .setDisplaySize(TS, TS)
         .setDepth(0);
       const edge = cx === 0 || cy === 0 || x + TS >= r.right || y + TS >= r.bottom;
-      const tintAmt = edge ? 0.55 : 0.38 + ((cx + cy + floor) % 3) * 0.06;
+      // Tint leve — preserva o look Kenney Tiny Dungeon
+      const tintAmt = edge ? 0.28 : 0.12 + ((cx + cy + floor) % 3) * 0.04;
       tile.setTint(mixTint(0xffffff, theme.floorTint, tintAmt));
     }
   }
 
-  const wallTint = mixTint(0xffffff, theme.accent, 0.42);
+  const wallTint = mixTint(0xffffff, theme.accent, 0.22);
   const wallY = r.y - TS / 2;
   for (let x = r.x; x < r.right; x += TS) {
     const isLeft = x <= r.x;
@@ -359,7 +371,7 @@ export function buildArenaVisual(
  * Spawna obstáculos com colisão conforme o preset do andar.
  */
 export function layoutObstacles(
-  scene: Phaser.Scene,
+  _scene: Phaser.Scene,
   blocks: Phaser.Physics.Arcade.StaticGroup,
   room: Phaser.Geom.Rectangle,
   floor: number,
@@ -369,18 +381,14 @@ export function layoutObstacles(
   const points = obstaclePoints(room, layout, floor);
   const accent = themeOf(floor, mode === "endless").accent;
 
+  const propKeys = ["tile_box", "tile_boxes_stacked", "tile_chest_closed", "tile_column"] as const;
   points.forEach(({ x, y }, i) => {
-    scene.add
-      .image(x, y - 28, "tile_column")
-      .setDisplaySize(36, 96)
-      .setDepth(4)
-      .setTint(mixTint(0xffffff, accent, 0.2));
-    const key = i % 3 === 0 ? "tile_boxes_stacked" : "tile_box";
-    const b = blocks.create(x, y + 8, key) as Phaser.Physics.Arcade.Sprite;
-    b.setDisplaySize(36, 36);
+    const key = propKeys[i % propKeys.length] ?? "tile_box";
+    const b = blocks.create(x, y, key) as Phaser.Physics.Arcade.Sprite;
+    b.setDisplaySize(40, 40);
     b.refreshBody();
     b.setDepth(5);
-    b.setTint(mixTint(0xffffff, accent, 0.12));
+    b.setTint(mixTint(0xffffff, accent, 0.08));
   });
 
   return layout;

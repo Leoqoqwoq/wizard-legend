@@ -135,6 +135,12 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`tile_${t}`, asset(`assets/tiles/${t}.png`));
     }
 
+    // Portal mágico (RodHakGames CC0) — saída de andar / batalha
+    this.load.spritesheet("portal_fx", asset("assets/fx/portal_sheet.png"), {
+      frameWidth: 32,
+      frameHeight: 48
+    });
+
     const ui = [
       "panel_card",
       "panel_card_alt",
@@ -285,6 +291,14 @@ export class BootScene extends Phaser.Scene {
         repeat: -1
       });
     }
+    if (!this.anims.exists("portal-spin")) {
+      this.anims.create({
+        key: "portal-spin",
+        frames: this.anims.generateFrameNumbers("portal_fx", { start: 0, end: 3 }),
+        frameRate: 8,
+        repeat: -1
+      });
+    }
 
     void this.finishBoot();
   }
@@ -319,13 +333,13 @@ export class BootScene extends Phaser.Scene {
     else this.scene.start("Lobby");
   }
 
-  /** Suaviza sprites (menos “pixel duro”, bordas mais redondas). */
+  /** Pixel art nítido (wizard + Tiny Dungeon 16×16). */
   private softenTextures() {
     for (const key of this.textures.getTextureKeys()) {
       if (key === "__DEFAULT" || key === "__MISSING") continue;
-      this.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
+      this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
     const canvas = this.game.canvas;
-    if (canvas) canvas.style.imageRendering = "auto";
+    if (canvas) canvas.style.imageRendering = "pixelated";
   }
 }

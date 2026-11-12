@@ -401,10 +401,10 @@ export class GameScene extends Phaser.Scene {
 
     const boss = this.createEnemy(kind, r.centerX, r.y + 120, floor, true);
     const data = boss.getData("data") as EnemyData;
-    // Boss: começa mais baixo e escala com o andar (não só a cada 10)
+    // Boss: bem tanque; escala forte com o andar (capítulo a cada 10)
     data.hp = data.maxHp = ultra
-      ? 140 + Math.floor(floor * 1.5)
-      : 10 + floor * 2 + Math.floor(floor / 10) * 6;
+      ? 420 + Math.floor(floor * 4)
+      : 40 + floor * 5 + Math.floor(floor / 10) * 22;
     data.speed = ultra ? 30 : 24 + Math.floor(floor / 10) * 2;
     data.damage = ultra ? 2 : 1;
     data.shootCd = ultra
